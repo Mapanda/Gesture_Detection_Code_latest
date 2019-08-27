@@ -121,7 +121,7 @@ public class ImageClassifier implements Classifier {
      * Classify a bitmap
      *
      * @param bitmap the {@link Bitmap} to analyse
-     * @return a list of {@link com.softbankrobotics.sample.whatdoyousee.tf.Classifier.Recognition} object
+     *
      */
     @Override
     public List<Recognition> recognizeImage(final Bitmap bitmap) {

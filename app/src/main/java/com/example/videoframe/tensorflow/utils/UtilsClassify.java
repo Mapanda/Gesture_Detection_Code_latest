@@ -7,7 +7,7 @@ package com.example.videoframe.tensorflow.utils;
 import android.graphics.Bitmap;
 import android.graphics.Matrix;
 
-public class Utils {
+public class UtilsClassify {
 
     /**
      * Resize a given Bitmap into another one

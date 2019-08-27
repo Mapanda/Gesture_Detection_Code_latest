@@ -1,4 +1,4 @@
-package com.example.videoframe;
+package com.example.videoframe.tensorflow;
 
 import android.content.Context;
 import android.graphics.Canvas;

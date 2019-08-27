@@ -1,4 +1,4 @@
-package com.example.videoframe;
+package com.example.videoframe.tensorflow;
 
 import android.Manifest;
 import android.app.Activity;
@@ -13,11 +13,13 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.SurfaceView;
-import android.view.View;
 import android.view.WindowManager;
 
+import com.example.videoframe.R;
 import com.example.videoframe.tensorflow.classifier.Classifier;
 import com.example.videoframe.tensorflow.classifier.ImageClassifier;
+import com.example.videoframe.tensorflow.utils.Constant;
+import com.example.videoframe.tensorflow.utils.UtilsClassify;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase;
@@ -43,7 +45,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity implements CvCameraViewListener2{
     private CameraBridgeViewBase mOpenCvCameraView;
@@ -67,7 +68,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     static {
         OpenCVLoader.initDebug();
     }
-
+    Classifier.Recognition bestRecognition;
 
     private BaseLoaderCallback mLoaderCallback = new BaseLoaderCallback(this) {
         @Override
@@ -179,8 +180,8 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
                 e.printStackTrace();
             }
         }
-        if(count==0)
-        backgroundSubtraction(firstImageFrame,nextImageFrame);
+        if(count==0){
+        backgroundSubtraction(firstImageFrame,nextImageFrame);}
         return imageMat;
     }
 
@@ -308,6 +309,20 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Bitmap bitmap = matToBitmapConversion(imgThreshold);
         Bitmap cutBitmap = cutRightTop(bitmap);
         Mat croppedMat = bitmapToMatConversion(cutBitmap);
+
+        Bitmap cutBitmapped = matToBitmapConversion(croppedMat);
+        classifyImage(cutBitmapped);
+        String name = "bg.jpg";
+        try {
+            //crop the image and save it later:
+            File newfile = savebitmap(cutBitmapped, name);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+
         Mat contoursFrame = croppedMat.clone();
         Imgproc.cvtColor(croppedMat, contoursFrame, Imgproc.COLOR_BGRA2GRAY);
         Imgproc.findContours(contoursFrame, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
@@ -347,11 +362,11 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
           }
         }
 
-        Bitmap cutBitmapped = matToBitmapConversion(contoursFrame);
-        String name = "bg1.jpg";
+        Bitmap cutBitmapped1= matToBitmapConversion(contoursFrame);
+        String name1 = "bg1.jpg";
         try {
             //crop the image and save it later:
-            File newfile = savebitmap(cutBitmapped, name);
+           File newfile = savebitmap(cutBitmapped1, name1);
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -443,15 +458,15 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Classifier classifier =
                 ImageClassifier.create(
                         getAssets(),
-                        MODEL_FILE,
-                        LABEL_FILE,
-                        INPUT_SIZE,
-                        IMAGE_MEAN,
-                        IMAGE_STD,
-                        INPUT_NAME,
-                        OUTPUT_NAME);
+                        Constant.MODEL_FILE,
+                        Constant.LABEL_FILE,
+                        Constant.INPUT_SIZE,
+                        Constant.IMAGE_MEAN,
+                        Constant.IMAGE_STD,
+                        Constant.INPUT_NAME,
+                        Constant.OUTPUT_NAME);
 
-        Bitmap resizedBitmap = Utils.getResizedBitmap(bitmap, INPUT_SIZE, INPUT_SIZE, false);
+        Bitmap resizedBitmap = UtilsClassify.getResizedBitmap(bitmap, Constant.INPUT_SIZE, Constant.INPUT_SIZE, false);
         List<Classifier.Recognition> results = classifier.recognizeImage(resizedBitmap);
         bestRecognition = new Classifier.Recognition("test", "testObject", 0.0f);
 
@@ -461,8 +476,8 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
                 bestRecognition = recognition;
         }
 
-        layoutResult(Utils.getResizedBitmap(bitmap, 1400, 900, true));
-        QiThreadPool.run(() -> processResult(bestRecognition));
+      //  layoutResult(UtilsClassify.getResizedBitmap(bitmap, 1400, 900, true));
+        processResult(bestRecognition);
     }
 
     private void processResult(Classifier.Recognition recognition) {
@@ -470,10 +485,10 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         float confidence = recognition.getConfidence() * 100;
         String bookmark;
 
-        txtObject.setText(getString(R.string.txt_object_text, name, String.format(Locale.getDefault(), "%.2f", confidence)));
+        /*txtObject.setText(getString(R.string.txt_object_text, name, String.format(Locale.getDefault(), "%.2f", confidence)));
         txtObject.setVisibility(View.VISIBLE);
 
-        playerSuccess.start();
+        playerSuccess.start();*/
 
         if (confidence > 15 && confidence < 40) {
             bookmark = "classify20";
@@ -487,11 +502,11 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             bookmark = "failClassify";
         }
 
-        isScanning.set(false);
+       /* isScanning.set(false);
 
         if (pepperHolder != null)
             pepperHolder.release();
 
-        RobotUtils.goToBookmark(qiChatbot, bookmarks, bookmark, name).getValue();
+        RobotUtils.goToBookmark(qiChatbot, bookmarks, bookmark, name).getValue();*/
     }
 }
