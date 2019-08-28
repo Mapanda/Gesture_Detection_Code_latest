@@ -28,10 +28,8 @@ import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
-import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
-import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
@@ -89,6 +87,19 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     };
 
     @Override
+    public void onResume()
+    {
+        super.onResume();
+        if (!OpenCVLoader.initDebug()) {
+            Log.d("OpenCV", "Internal OpenCV library not found. Using OpenCV Manager for initialization");
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, mLoaderCallback);
+        } else {
+            Log.d("OpenCV", "OpenCV library found inside package. Using it!");
+            mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        }
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         Log.i("APP", "called onCreate");
         super.onCreate(savedInstanceState);
@@ -106,19 +117,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
     }
 
-    @Override
-    public void onResume()
-    {
-        super.onResume();
-        if (!OpenCVLoader.initDebug()) {
-            Log.d("OpenCV", "Internal OpenCV library not found. Using OpenCV Manager for initialization");
-            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, mLoaderCallback);
-        } else {
-            Log.d("OpenCV", "OpenCV library found inside package. Using it!");
-            mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
-        }
-        //mOpenCvCameraView.enableView();
-    }
 
     /**
      * This method is invoked when camera preview has started. After this method is invoked
@@ -150,39 +148,49 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
      */
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
+        Highgui
     int count =0;
         if(!isBackGroundCaptured) {
-            firstImageFrame = matOnCameraframe(inputFrame);
-            Bitmap bitmapFirst = matToBitmapConversion(firstImageFrame);
-            Bitmap cutBitmap = cutRightTop(bitmapFirst);
-            String name = "removeBackround.jpg";
-            try {
-                File newfile = savebitmap(cutBitmap, name);
-                Log.i("*********22222", newfile.getAbsolutePath());
-                isBackGroundCaptured = true;
-                count++;
-
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+            count = initialBackgroundCapture(inputFrame, count);
         }else{
-            count=0;
-            nextImageFrame = matOnCameraframe(inputFrame);
-            Bitmap nextBitmap = matToBitmapConversion(nextImageFrame);
-            Bitmap cutBitmap = cutRightTop(nextBitmap);
-
-            String name = "requiredImage.jpg";
-            try {
-                File newfile = savebitmap(cutBitmap, name);
-                Log.i("*********22222", newfile.getAbsolutePath());
-
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+            count = continuousBackgroundCapture(inputFrame);
         }
         if(count==0){
         backgroundSubtraction(firstImageFrame,nextImageFrame);}
         return imageMat;
+    }
+
+    private int continuousBackgroundCapture(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
+        int count;
+        count=0;
+        nextImageFrame = matOnCameraframe(inputFrame);
+        Bitmap nextBitmap = matToBitmapConversion(nextImageFrame);
+        Bitmap cutBitmap = cutRightTop(nextBitmap);
+        String name = "requiredImage.jpg";
+        try {
+            File newfile = savebitmap(cutBitmap, name);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return count;
+    }
+
+    private int initialBackgroundCapture(CameraBridgeViewBase.CvCameraViewFrame inputFrame, int count) {
+        firstImageFrame = matOnCameraframe(inputFrame);
+        Bitmap bitmapFirst = matToBitmapConversion(firstImageFrame);
+        Bitmap cutBitmap = cutRightTop(bitmapFirst);
+        String name = "removeBackround.jpg";
+        try {
+            File newfile = savebitmap(cutBitmap, name);
+            Log.i("*********22222", newfile.getAbsolutePath());
+            isBackGroundCaptured = true;
+            count++;
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return count;
     }
 
     private Bitmap matToBitmapConversion(Mat imageMat) {
@@ -204,8 +212,8 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Imgproc.cvtColor(imageMat1,imageMat1,Imgproc.COLOR_RGB2RGBA);
         int w = imageMat.width();
         int h = imageMat.height();
-        int w_rect = w*3/4; // or 640
-        int h_rect = h*3/4; // or 480
+        int w_rect = w*3/4;
+        int h_rect = h*3/4;
         int new_width = (w+w_rect)/3;
         int new_height = (h+h_rect)/3;
         Imgproc.rectangle(imageMat,  new Point(new_width, new_height), new Point( 0, 0),new Scalar( 255, 0, 0 ), 5);
@@ -214,8 +222,8 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     private Bitmap cutRightTop( Bitmap origialBitmap) {
         int height = origialBitmap.getHeight();
         int width = origialBitmap.getWidth();
-        int w_rect = width*3/4; // or 640
-        int h_rect = height*3/4; // or 480
+        int w_rect = width*3/4;
+        int h_rect = height*3/4;
         int new_width = (width+w_rect)/3;
         int new_height = (height+h_rect)/3;
         //TODO; get the BOX height and width here and send it in the srcRect and dest Rect
@@ -224,144 +232,52 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Canvas canvas = new Canvas(cutBitmap);
         Rect desRect = new Rect(0, 0, new_width, new_height);
         Rect srcRect = new Rect(0, 0, new_width,new_height);
-        Log.i("*********1", String.valueOf(w_rect));
-        Log.i("*********2", String.valueOf(h_rect));
         canvas.drawBitmap(origialBitmap, srcRect, desRect, null);
-
         return cutBitmap;
     }
     public void backgroundSubtraction(Mat mRgb,Mat mCol) {
             double threshold =16.0;
             int erosion_size = 5;
             Imgproc.GaussianBlur(mCol, mRgb, new Size(3, 3), 0, 0, Core.BORDER_DEFAULT);
-            //Imgproc.cvtColor(mCol, mRgb, Imgproc.COLOR_GRAY2RGBA);
             Mat element = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(2*erosion_size +1,2*erosion_size+1));
             sub.apply(mRgb, mFGMask); //apply() exports a gray image by definition
             Imgproc.cvtColor(mFGMask, mCol, Imgproc.COLOR_GRAY2RGBA);
             final Size ksize = new Size(3, 3);
             Imgproc.erode(mFGMask,imgThreshold,element);
-           // Mat skin= skinDetection(imgThreshold);
             Imgproc.GaussianBlur(mFGMask, imgThreshold,ksize,0);
             double thresholdedValue = Imgproc.threshold(mFGMask, imgThreshold, threshold, Imgproc.THRESH_BINARY+Imgproc.THRESH_OTSU, 11);
-            Log.i("*********11", String.valueOf(imgThreshold.height()));
-            Log.i("*********22", String.valueOf(imgThreshold.width()));
-            putText(imageMat);
-            //crop the image and then proceed:
-            // Step HSV_Threshold0:
-          //  Mat hsvThresholdInput = imgThreshold;
-
-
-            /*boolean findContoursExternalOnly = true;
-            double[] hsvThresholdHue = { 0.0, 110.88737201365191 };
-            double[] hsvThresholdSaturation = { 0.0, 94 };
-            double[] hsvThresholdValue = { 252.24820143884895, 255.0 };
-            hsvThreshold(hsvThresholdInput, hsvThresholdHue, hsvThresholdSaturation, hsvThresholdValue, hsvThresholdOutput);
-            Mat findContoursInput = hsvThresholdOutput;*/
-
-           // Mat contoursFrame = imgThreshold.clone();
-           findContourForBg();
-    }
-    public Mat skinDetection(Mat src) {
-        // define the upper and lower boundaries of the HSV pixel
-        // intensities to be considered 'skin'
-        Scalar lower = new Scalar(0, 48, 80);
-        Scalar upper = new Scalar(20, 255, 255);
-
-        // Convert to HSV
-        Mat hsvFrame = new Mat(src.rows(), src.cols(), CvType.CV_8U, new Scalar(3));
-        Imgproc.cvtColor(src, hsvFrame, Imgproc.COLOR_RGB2HSV, 3);
-
-        // Mask the image for skin colors
-        Mat skinMask = new Mat(hsvFrame.rows(), hsvFrame.cols(), CvType.CV_8U, new Scalar(3));
-        Core.inRange(hsvFrame, lower, upper, skinMask);
-//        currentSkinMask = new Mat(hsvFrame.rows(), hsvFrame.cols(), CvType.CV_8U, new Scalar(3));
-//        skinMask.copyTo(currentSkinMask);
-
-        // apply a series of erosions and dilations to the mask
-        // using an elliptical kernel
-        final Size kernelSize = new Size(11, 11);
-        final Point anchor = new Point(-1, -1);
-        final int iterations = 2;
-
-        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, kernelSize);
-        Imgproc.erode(skinMask, skinMask, kernel, anchor, iterations);
-        Imgproc.dilate(skinMask, skinMask, kernel, anchor, iterations);
-
-        // blur the mask to help remove noise, then apply the
-        // mask to the frame
-        final Size ksize = new Size(3, 3);
-
-        Mat skin = new Mat(skinMask.rows(), skinMask.cols(), CvType.CV_8U, new Scalar(3));
-        Imgproc.GaussianBlur(skinMask, skinMask, ksize, 0);
-        Core.bitwise_and(src, src, skin, skinMask);
-
-        return skin;
+            findContourForBg();
     }
 
     private void findContourForBg() {
         List<MatOfPoint> contours = new ArrayList<MatOfPoint>();
         Mat hierarchy = new Mat();
-        // Imgproc.findContours(contoursFrame, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
         int  contoursCounter = contours.size();
-        Log.i("*********00:", String.valueOf(contoursCounter));
-        // Mat imgContour=findContours(contoursFrame, true, findContoursOutput);
-        //Imgproc.drawContours(contoursFrame, contours, -1, new Scalar(255,0,0,255));
         Bitmap bitmap = matToBitmapConversion(imgThreshold);
         Bitmap cutBitmap = cutRightTop(bitmap);
         Mat croppedMat = bitmapToMatConversion(cutBitmap);
-
         Bitmap cutBitmapped = matToBitmapConversion(croppedMat);
         classifyImage(cutBitmapped);
         String name = "bg.jpg";
         try {
             //crop the image and save it later:
             File newfile = savebitmap(cutBitmapped, name);
-
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-
-
         Mat contoursFrame = croppedMat.clone();
         Imgproc.cvtColor(croppedMat, contoursFrame, Imgproc.COLOR_BGRA2GRAY);
         Imgproc.findContours(contoursFrame, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
         Imgproc.cvtColor(contoursFrame, contoursFrame, Imgproc.COLOR_GRAY2BGRA);
 
 
-      /*  double maxArea = 0;
-        MatOfPoint max_contour = new MatOfPoint();
-        List<MatOfPoint> contour = new ArrayList<MatOfPoint>();
-        List<MatOfInt> hull = new ArrayList<MatOfInt>();
-        Iterator<MatOfPoint> iterator = contours.iterator();
-        while (iterator.hasNext()){
-             contour = iterator.next();
-            double area = Imgproc.contourArea(contour);
-            if(area > maxArea){
-                maxArea = area;
-                max_contour = contour;
-            }
-        }
-        Size size = max_contour.size();*/
-
-        /*size.
-        MatOfPoint res=  contours.get();
-        MatOfInt hull= Imgproc.convexHull(contour, hull);
-        Mat contourDrawMat = new Mat();
-
-        Imgproc.drawContours(contourDrawMat, hull, 0, new Scalar(0, 255, 0),2);
-        Imgproc.drawContours(contourDrawMat, res, 0, new Scalar(0, 255, 0),2);*/
-
-
           if (contours.size() > 0)  // Minimum size allowed for consideration
           {
               for (int contourIdx=0; contourIdx < contours.size(); contourIdx++ ) {
                   MatOfPoint  temp = contours.get(contourIdx);
-
-                Imgproc.drawContours(contoursFrame, contours, -1, new Scalar(0, 255, 0),5);
+                  Imgproc.drawContours(contoursFrame, contours, -1, new Scalar(0, 255, 0),5);
           }
         }
-
         Bitmap cutBitmapped1= matToBitmapConversion(contoursFrame);
         String name1 = "bg1.jpg";
         try {
@@ -371,60 +287,17 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        try {
-            Thread.sleep(30);
-        } catch (InterruptedException ex) {
-
-        }
     }
 
-    private void putText(Mat imgThreshold){
+    private void putText(Mat imgThreshold,String recognitionValue){
         //TODO: Add the text of detection on robot in a textfield possibly
-        Imgproc.putText(imgThreshold, "Frame", new Point(imgThreshold.width() / 2,30), Core.FONT_HERSHEY_PLAIN, 2, new Scalar(0,255,255),3);
-    }
-    private void hsvThreshold(Mat input, double[] hue, double[] sat, double[] val, Mat out) {
-        Imgproc.cvtColor(input, out, Imgproc.COLOR_BGR2HSV);
-        Core.inRange(out, new Scalar(hue[0], sat[0], val[0]), new Scalar(hue[1], sat[1], val[1]), out);
-    }
-    /**
-     * Sets the values of pixels in a binary image to their distance to the nearest black pixel.
-     *  maskSize
-     *            the size of the mask.
-     * output
-     * @param input
-*            The image on which to perform the Distance Transform.
-     */
-    private Mat findContours(Mat input, boolean externalOnly, List<MatOfPoint> contours) {
-        MatOfPoint2f approxCurve = new MatOfPoint2f();
-
-        //For each contour found
-        for (int i=0; i<contours.size(); i++)
-        {
-            //Convert contours(i) from MatOfPoint to MatOfPoint2f
-            MatOfPoint2f contour2f = new MatOfPoint2f( contours.get(i).toArray() );
-            //Processing on mMOP2f1 which is in type MatOfPoint2f
-            double approxDistance = Imgproc.arcLength(contour2f, true)*0.02;
-            Imgproc.approxPolyDP(contour2f, approxCurve, approxDistance, true);
-
-            //Convert back to MatOfPoint
-            MatOfPoint points = new MatOfPoint( approxCurve.toArray() );
-
-            // Get bounding rect of contour
-            org.opencv.core.Rect rect = Imgproc.boundingRect(points);
-
-            // draw enclosing rectangle (all same color, but you could use variable i to make them unique)
-            Imgproc.rectangle(input, new Point(rect.x,rect.y), new Point(rect.x+rect.width,rect.y+rect.height), new Scalar(255, 0, 0, 255), 3);
-
-        }
-        return input;
+        Imgproc.putText(imgThreshold, recognitionValue, new Point(imgThreshold.width() / 2,30), Core.FONT_HERSHEY_PLAIN, 2, new Scalar(0,255,255),3);
     }
 
-    public  File savebitmap(Bitmap bmp , String name) throws IOException {
+    private  File savebitmap(Bitmap bmp , String name) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         bmp.compress(Bitmap.CompressFormat.JPEG, 60, bytes);
         verifyStoragePermissions(this);
-
         File f = new File(Environment.getExternalStorageDirectory()
                 + File.separator + name);
         f.createNewFile();
@@ -469,14 +342,20 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Bitmap resizedBitmap = UtilsClassify.getResizedBitmap(bitmap, Constant.INPUT_SIZE, Constant.INPUT_SIZE, false);
         List<Classifier.Recognition> results = classifier.recognizeImage(resizedBitmap);
         bestRecognition = new Classifier.Recognition("test", "testObject", 0.0f);
-
+        int count =0;
         for (Classifier.Recognition recognition :
                 results) {
+           count++;
             if (recognition.getConfidence() > bestRecognition.getConfidence())
                 bestRecognition = recognition;
-        }
+            Mat textMap = bitmapToMatConversion(resizedBitmap);
 
-      //  layoutResult(UtilsClassify.getResizedBitmap(bitmap, 1400, 900, true));
+            Log.i("Prediction : ****", String.valueOf(bestRecognition.getConfidence()));
+            putText(textMap,String.valueOf(bestRecognition.getConfidence()));
+            putText(textMap,bestRecognition.getTitle());
+            Log.i("Count : ",String.valueOf (count));
+            Log.i("Name : " , bestRecognition.getTitle());
+        }
         processResult(bestRecognition);
     }
 
@@ -484,12 +363,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         String name = bestRecognition.getTitle();
         float confidence = recognition.getConfidence() * 100;
         String bookmark;
-
-        /*txtObject.setText(getString(R.string.txt_object_text, name, String.format(Locale.getDefault(), "%.2f", confidence)));
-        txtObject.setVisibility(View.VISIBLE);
-
-        playerSuccess.start();*/
-
         if (confidence > 15 && confidence < 40) {
             bookmark = "classify20";
         } else if (confidence > 40 && confidence < 60) {
@@ -501,12 +374,5 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         } else {
             bookmark = "failClassify";
         }
-
-       /* isScanning.set(false);
-
-        if (pepperHolder != null)
-            pepperHolder.release();
-
-        RobotUtils.goToBookmark(qiChatbot, bookmarks, bookmark, name).getValue();*/
     }
 }
