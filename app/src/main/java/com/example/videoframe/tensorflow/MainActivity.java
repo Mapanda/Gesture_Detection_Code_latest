@@ -58,11 +58,27 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     Mat firstImageFrame ;
     Mat nextImageFrame ;
     Mat imgThreshold = new Mat();
-    boolean isBackGroundCaptured =false;
     private Mat mFGMask = new Mat();
     double blurValue = 41.0;  // GaussianBlur parameter
     private ArrayList<MatOfPoint> findContoursOutput = new ArrayList<>();
     private Mat hsvThresholdOutput = new Mat();
+
+
+    /**Strted coding from here newly**/
+
+    Mat rgbaBilateralFrame;
+    int smoothingFactor =5;
+    double sigmaColor = 50.0 ;
+    double sigmaSpace=100.0;
+    int history =0;
+    double bgThreshold=50.0;
+    boolean isShadowDetected=false;
+    BackgroundSubtractorMOG2 bgModel =Video.createBackgroundSubtractorMOG2(history,bgThreshold,isShadowDetected);
+    boolean isBackGroundCaptured = false;
+    int gaussianBlurValue = 41;
+    Mat backgroundSubtractionFrame=new Mat();
+    /**ended here**/
+
     static {
         OpenCVLoader.initDebug();
     }
@@ -148,50 +164,93 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
      */
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-        Highgui
-    int count =0;
+
+        Mat rgbaFrame = inputFrame.rgba();
+        Mat rgba = new Mat();
+        double thresholdValue=50;
+        Mat clippedMat = new Mat();
+        Imgproc.cvtColor(rgbaFrame,rgbaFrame,Imgproc.COLOR_BGRA2RGB);
+        rgbaBilateralFrame = rgbaFrame.clone();
+        //bilateral filtering : smoothing
+        Imgproc.bilateralFilter(rgbaFrame,rgbaBilateralFrame,smoothingFactor,sigmaColor,sigmaSpace);
+        //cration of rectangle on the current frame:
+        rgba= createRectangleOnFrame(rgbaBilateralFrame);
+        //Creation of background model:
         if(!isBackGroundCaptured) {
-            count = initialBackgroundCapture(inputFrame, count);
-        }else{
-            count = continuousBackgroundCapture(inputFrame);
+            backgroundSubtractionFrame = inputFrame.rgba();
+            isBackGroundCaptured=true;
+
         }
-        if(count==0){
-        backgroundSubtraction(firstImageFrame,nextImageFrame);}
-        return imageMat;
+        if(isBackGroundCaptured) {
+            extractGesture(backgroundSubtractionFrame,thresholdValue);
+        }
+        return rgba;
     }
 
-    private int continuousBackgroundCapture(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-        int count;
-        count=0;
-        nextImageFrame = matOnCameraframe(inputFrame);
-        Bitmap nextBitmap = matToBitmapConversion(nextImageFrame);
-        Bitmap cutBitmap = cutRightTop(nextBitmap);
-        String name = "requiredImage.jpg";
-        try {
-            File newfile = savebitmap(cutBitmap, name);
+    private void extractGesture(Mat backgroundSubtractionFrame ,double thresholdValue) {
+        Mat clippedMat;
+        Size kSize = new Size(3, 3);
+        //remove the background from the filtered frame:
+        backgroundSubtractionFrame = clipImageOnROI(backgroundSubtractionFrame);
+        getSavedImage(backgroundSubtractionFrame,"backgroundClipped.jpg");
+        rgbaBilateralFrame = removeBackgroundFromFrame(backgroundSubtractionFrame,rgbaBilateralFrame);
+        getSavedImage(rgbaBilateralFrame,"removed.jpg");
+        clippedMat = clipImageOnROI(rgbaBilateralFrame);
+        Imgproc.cvtColor(clippedMat,clippedMat,Imgproc.COLOR_BGR2GRAY);
+        Imgproc.GaussianBlur(clippedMat,clippedMat,kSize,gaussianBlurValue);
+        Imgproc.threshold(clippedMat, clippedMat, 50,0,Imgproc.THRESH_BINARY);
 
+
+    }
+
+    private void getSavedImage(Mat clippedMat,String name){
+        Bitmap bitmap =matToBitmapConversion(clippedMat);
+        try {
+            savebitmap(bitmap,name);
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return count;
+    }
+    //This creates a rectangle on the camera frame for the hand to get cropped.
+    private Mat createRectangleOnFrame(Mat rgbaBilateralFrame){
+        int w = rgbaBilateralFrame.width();
+        int h = rgbaBilateralFrame.height();
+        int w_rect = w*3/4;
+        int h_rect = h*3/4;
+        int new_width = (w+w_rect)/4;
+        int new_height = (h+h_rect)/4;
+        Imgproc.rectangle(rgbaBilateralFrame,  new Point(0, 0), new Point( new_width, new_height),new Scalar( 0, 255, 0 ), 5);
+        return rgbaBilateralFrame;
     }
 
-    private int initialBackgroundCapture(CameraBridgeViewBase.CvCameraViewFrame inputFrame, int count) {
-        firstImageFrame = matOnCameraframe(inputFrame);
-        Bitmap bitmapFirst = matToBitmapConversion(firstImageFrame);
-        Bitmap cutBitmap = cutRightTop(bitmapFirst);
-        String name = "removeBackround.jpg";
-        try {
-            File newfile = savebitmap(cutBitmap, name);
-            Log.i("*********22222", newfile.getAbsolutePath());
-            isBackGroundCaptured = true;
-            count++;
-
-        } catch (IOException e) {
-            e.printStackTrace();
+   private Mat removeBackgroundFromFrame(Mat backgroundSubtractionFrame,Mat rgbaBilateralFrame){
+        double learningRate=0.1;
+        Mat mRgb = new Mat();
+        int erosion_size=5;
+        Mat fgMask = new Mat();
+        Imgproc.GaussianBlur(rgbaBilateralFrame, backgroundSubtractionFrame, new Size(3, 3), 0, 0, Core.BORDER_DEFAULT);
+        Imgproc.cvtColor(rgbaBilateralFrame,mRgb,Imgproc.COLOR_RGBA2RGB);
+        bgModel.apply(mRgb,fgMask,learningRate);
+        Imgproc.cvtColor(fgMask, rgbaBilateralFrame, Imgproc.COLOR_GRAY2RGBA);
+        Mat element = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(2*erosion_size +1,2*erosion_size+1));
+        //if doesn't work then change this to bilateral filtermat
+        Imgproc.erode(fgMask,fgMask,element);
+        try{
+            Thread.sleep(10);
+        }catch(InterruptedException e){
+            Log.i("TAG","The thread has been interrupted by another process");
         }
-        return count;
-    }
+
+        return rgbaBilateralFrame;
+
+   }
+   private Mat clipImageOnROI(Mat rgbaBilateralFrame){
+       Bitmap nextBitmap = matToBitmapConversion(rgbaBilateralFrame);
+       Bitmap cutBitmap = clipImageMat(nextBitmap);
+       rgbaBilateralFrame = bitmapToMatConversion(cutBitmap);
+       return rgbaBilateralFrame;
+   }
+//ended here as of now:
 
     private Bitmap matToBitmapConversion(Mat imageMat) {
         Bitmap bitmap = Bitmap.createBitmap(imageMat.cols(), imageMat.rows(), Bitmap.Config.ARGB_8888);
@@ -204,38 +263,24 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Utils.bitmapToMat(bmp32,convertedMat);
         return convertedMat;
     }
-    private Mat matOnCameraframe(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-        Mat imageMat1 = inputFrame.rgba();
-        Imgproc.cvtColor(imageMat1,imageMat1,Imgproc.COLOR_BGRA2RGB);
-        imageMat = imageMat1.clone();
-        Imgproc.bilateralFilter(imageMat1,imageMat,10,250,50); //smoothing filter
-        Imgproc.cvtColor(imageMat1,imageMat1,Imgproc.COLOR_RGB2RGBA);
-        int w = imageMat.width();
-        int h = imageMat.height();
-        int w_rect = w*3/4;
-        int h_rect = h*3/4;
-        int new_width = (w+w_rect)/3;
-        int new_height = (h+h_rect)/3;
-        Imgproc.rectangle(imageMat,  new Point(new_width, new_height), new Point( 0, 0),new Scalar( 255, 0, 0 ), 5);
-        return imageMat;
-    }
-    private Bitmap cutRightTop( Bitmap origialBitmap) {
+
+    private Bitmap clipImageMat(Bitmap origialBitmap) {
         int height = origialBitmap.getHeight();
         int width = origialBitmap.getWidth();
         int w_rect = width*3/4;
         int h_rect = height*3/4;
-        int new_width = (width+w_rect)/3;
-        int new_height = (height+h_rect)/3;
+        int new_width = (width+w_rect)/4;
+        int new_height = (height+h_rect)/4;
         //TODO; get the BOX height and width here and send it in the srcRect and dest Rect
-        Bitmap cutBitmap = Bitmap.createBitmap(origialBitmap.getWidth(),
-                origialBitmap.getHeight(), Bitmap.Config.ARGB_8888);
+        Bitmap cutBitmap = Bitmap.createBitmap(new_width,
+                new_height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(cutBitmap);
         Rect desRect = new Rect(0, 0, new_width, new_height);
         Rect srcRect = new Rect(0, 0, new_width,new_height);
         canvas.drawBitmap(origialBitmap, srcRect, desRect, null);
         return cutBitmap;
     }
-    public void backgroundSubtraction(Mat mRgb,Mat mCol) {
+    public Mat  backgroundSubtraction(Mat mRgb,Mat mCol) {
             double threshold =16.0;
             int erosion_size = 5;
             Imgproc.GaussianBlur(mCol, mRgb, new Size(3, 3), 0, 0, Core.BORDER_DEFAULT);
@@ -247,6 +292,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             Imgproc.GaussianBlur(mFGMask, imgThreshold,ksize,0);
             double thresholdedValue = Imgproc.threshold(mFGMask, imgThreshold, threshold, Imgproc.THRESH_BINARY+Imgproc.THRESH_OTSU, 11);
             findContourForBg();
+            return imgThreshold;
     }
 
     private void findContourForBg() {
@@ -254,14 +300,14 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Mat hierarchy = new Mat();
         int  contoursCounter = contours.size();
         Bitmap bitmap = matToBitmapConversion(imgThreshold);
-        Bitmap cutBitmap = cutRightTop(bitmap);
+        Bitmap cutBitmap = clipImageMat(bitmap);
         Mat croppedMat = bitmapToMatConversion(cutBitmap);
         Bitmap cutBitmapped = matToBitmapConversion(croppedMat);
         classifyImage(cutBitmapped);
         String name = "bg.jpg";
         try {
             //crop the image and save it later:
-            File newfile = savebitmap(cutBitmapped, name);
+            savebitmap(cutBitmapped, name);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -282,7 +328,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         String name1 = "bg1.jpg";
         try {
             //crop the image and save it later:
-           File newfile = savebitmap(cutBitmapped1, name1);
+         savebitmap(cutBitmapped1, name1);
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -294,7 +340,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Imgproc.putText(imgThreshold, recognitionValue, new Point(imgThreshold.width() / 2,30), Core.FONT_HERSHEY_PLAIN, 2, new Scalar(0,255,255),3);
     }
 
-    private  File savebitmap(Bitmap bmp , String name) throws IOException {
+    private  void savebitmap(Bitmap bmp , String name) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         bmp.compress(Bitmap.CompressFormat.JPEG, 60, bytes);
         verifyStoragePermissions(this);
@@ -304,7 +350,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         FileOutputStream fo = new FileOutputStream(f);
         fo.write(bytes.toByteArray());
         fo.close();
-        return f;
+
     }
     /**
      * Checks if the app has permission to write to device storage
