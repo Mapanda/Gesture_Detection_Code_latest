@@ -13,7 +13,9 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.SurfaceView;
+import android.view.View;
 import android.view.WindowManager;
+import android.widget.Button;
 
 import com.example.videoframe.R;
 import com.example.videoframe.tensorflow.classifier.Classifier;
@@ -28,6 +30,7 @@ import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.Point;
@@ -65,7 +68,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
 
     /**Strted coding from here newly**/
-
+    private Button gestureExtractionButton;
     Mat rgbaBilateralFrame;
     int smoothingFactor =5;
     double sigmaColor = 50.0 ;
@@ -91,7 +94,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
                 case LoaderCallbackInterface.SUCCESS:
                 {
                     Log.i("OpenCV", "OpenCV loaded successfully");
-                   // imageMat=new Mat();
+                    // imageMat=new Mat();
                     mOpenCvCameraView.enableView();
                 } break;
                 default:
@@ -122,14 +125,32 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         String s = "CAMERA";
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                    requestPermissions(new String[]{Manifest.permission.CAMERA}, 1);
-                }
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.CAMERA}, 1);
+            }
         }
         setContentView(R.layout.activity_main);
         mOpenCvCameraView = (CameraBridgeViewBase)findViewById(R.id.HelloOpenCvView);
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
         mOpenCvCameraView.setCvCameraViewListener(this);
+
+        gestureExtractionButton = findViewById(R.id.ROI);
+        gestureExtractionButton.setEnabled(true);
+        gestureExtractionButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Log.i("Masking : ","Masking capture button Clicked Started.. ");
+                /*if(isBackGroundCaptured) {
+                    //getSavedImage(backgroundSubtractionFrame,"second.jpg");
+                   extractGesture(backgroundSubtractionFrame);
+
+                }*/
+                Log.i("Masking : ","Masking capture button Clicked Finished.. ");
+                gestureExtractionButton.setEnabled(false);
+            }
+
+        });
+
 
     }
 
@@ -178,27 +199,28 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         //Creation of background model:
         if(!isBackGroundCaptured) {
             backgroundSubtractionFrame = inputFrame.rgba();
+           // backgroundSubtractionFrame = clipImageOnROI(backgroundSubtractionFrame);
             isBackGroundCaptured=true;
 
         }
         if(isBackGroundCaptured) {
-            extractGesture(backgroundSubtractionFrame,thresholdValue);
+            extractGesture(backgroundSubtractionFrame);
         }
         return rgba;
     }
 
-    private void extractGesture(Mat backgroundSubtractionFrame ,double thresholdValue) {
-        Mat clippedMat;
+    private void extractGesture(Mat backgroundSubtractionFrame) {
+        //Mat clippedMat;
         Size kSize = new Size(3, 3);
         //remove the background from the filtered frame:
         backgroundSubtractionFrame = clipImageOnROI(backgroundSubtractionFrame);
         getSavedImage(backgroundSubtractionFrame,"backgroundClipped.jpg");
+        rgbaBilateralFrame = clipImageOnROI(rgbaBilateralFrame);
         rgbaBilateralFrame = removeBackgroundFromFrame(backgroundSubtractionFrame,rgbaBilateralFrame);
         getSavedImage(rgbaBilateralFrame,"removed.jpg");
-        clippedMat = clipImageOnROI(rgbaBilateralFrame);
-        Imgproc.cvtColor(clippedMat,clippedMat,Imgproc.COLOR_BGR2GRAY);
-        Imgproc.GaussianBlur(clippedMat,clippedMat,kSize,gaussianBlurValue);
-        Imgproc.threshold(clippedMat, clippedMat, 50,0,Imgproc.THRESH_BINARY);
+        Imgproc.cvtColor(rgbaBilateralFrame,rgbaBilateralFrame,Imgproc.COLOR_BGR2GRAY);
+        Imgproc.GaussianBlur(rgbaBilateralFrame,rgbaBilateralFrame,kSize,gaussianBlurValue);
+        Imgproc.threshold(rgbaBilateralFrame, rgbaBilateralFrame, 50,0,Imgproc.THRESH_BINARY);
 
 
     }
@@ -217,40 +239,55 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         int h = rgbaBilateralFrame.height();
         int w_rect = w*3/4;
         int h_rect = h*3/4;
-        int new_width = (w+w_rect)/4;
-        int new_height = (h+h_rect)/4;
+        int new_width = (w+w_rect)/3;
+        int new_height = (h+h_rect)/3;
         Imgproc.rectangle(rgbaBilateralFrame,  new Point(0, 0), new Point( new_width, new_height),new Scalar( 0, 255, 0 ), 5);
         return rgbaBilateralFrame;
     }
 
-   private Mat removeBackgroundFromFrame(Mat backgroundSubtractionFrame,Mat rgbaBilateralFrame){
-        double learningRate=0.1;
+    private Mat removeBackgroundFromFrame(Mat backgroundSubtractionFrame,Mat rgbaBilateralFrame){
+        double learningRate=0;
         Mat mRgb = new Mat();
-        int erosion_size=5;
+
         Mat fgMask = new Mat();
         Imgproc.GaussianBlur(rgbaBilateralFrame, backgroundSubtractionFrame, new Size(3, 3), 0, 0, Core.BORDER_DEFAULT);
         Imgproc.cvtColor(rgbaBilateralFrame,mRgb,Imgproc.COLOR_RGBA2RGB);
-        bgModel.apply(mRgb,fgMask,learningRate);
+        bgModel.apply(mRgb,fgMask);
         Imgproc.cvtColor(fgMask, rgbaBilateralFrame, Imgproc.COLOR_GRAY2RGBA);
-        Mat element = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(2*erosion_size +1,2*erosion_size+1));
-        //if doesn't work then change this to bilateral filtermat
-        Imgproc.erode(fgMask,fgMask,element);
+        BackgroundErosion(fgMask);
         try{
-            Thread.sleep(10);
+            Thread.sleep(1000);
         }catch(InterruptedException e){
             Log.i("TAG","The thread has been interrupted by another process");
         }
 
         return rgbaBilateralFrame;
 
-   }
-   private Mat clipImageOnROI(Mat rgbaBilateralFrame){
-       Bitmap nextBitmap = matToBitmapConversion(rgbaBilateralFrame);
-       Bitmap cutBitmap = clipImageMat(nextBitmap);
-       rgbaBilateralFrame = bitmapToMatConversion(cutBitmap);
-       return rgbaBilateralFrame;
-   }
-//ended here as of now:
+    }
+
+    private void BackgroundErosion(Mat fgMask) {
+        int erosion_size=5;
+
+        final Point anchor = new Point(-1,-1);
+        final int iteration=2;
+        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(2*erosion_size +1,2*erosion_size+1));
+        //if doesn't work then change this to bilateral filtermat
+        Imgproc.erode(fgMask,fgMask,kernel,anchor,iteration);
+        Imgproc.dilate(fgMask,fgMask,kernel,anchor,iteration);
+        final Size ksize = new Size(3,3);
+        Mat skin = new Mat(fgMask.rows(),fgMask.cols(), CvType.CV_8U,new Scalar(3));
+        Imgproc.GaussianBlur(fgMask,fgMask,ksize,0);
+        Core.bitwise_and(fgMask,fgMask,skin);
+
+    }
+
+    private Mat clipImageOnROI(Mat rgbaBilateralFrame){
+        Bitmap nextBitmap = matToBitmapConversion(rgbaBilateralFrame);
+        Bitmap cutBitmap = clipImageMat(nextBitmap);
+        rgbaBilateralFrame = bitmapToMatConversion(cutBitmap);
+        return rgbaBilateralFrame;
+    }
+    //ended here as of now:
 
     private Bitmap matToBitmapConversion(Mat imageMat) {
         Bitmap bitmap = Bitmap.createBitmap(imageMat.cols(), imageMat.rows(), Bitmap.Config.ARGB_8888);
@@ -269,8 +306,8 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         int width = origialBitmap.getWidth();
         int w_rect = width*3/4;
         int h_rect = height*3/4;
-        int new_width = (width+w_rect)/4;
-        int new_height = (height+h_rect)/4;
+        int new_width = (width+w_rect)/3;
+        int new_height = (height+h_rect)/3;
         //TODO; get the BOX height and width here and send it in the srcRect and dest Rect
         Bitmap cutBitmap = Bitmap.createBitmap(new_width,
                 new_height, Bitmap.Config.ARGB_8888);
@@ -281,18 +318,18 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         return cutBitmap;
     }
     public Mat  backgroundSubtraction(Mat mRgb,Mat mCol) {
-            double threshold =16.0;
-            int erosion_size = 5;
-            Imgproc.GaussianBlur(mCol, mRgb, new Size(3, 3), 0, 0, Core.BORDER_DEFAULT);
-            Mat element = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(2*erosion_size +1,2*erosion_size+1));
-            sub.apply(mRgb, mFGMask); //apply() exports a gray image by definition
-            Imgproc.cvtColor(mFGMask, mCol, Imgproc.COLOR_GRAY2RGBA);
-            final Size ksize = new Size(3, 3);
-            Imgproc.erode(mFGMask,imgThreshold,element);
-            Imgproc.GaussianBlur(mFGMask, imgThreshold,ksize,0);
-            double thresholdedValue = Imgproc.threshold(mFGMask, imgThreshold, threshold, Imgproc.THRESH_BINARY+Imgproc.THRESH_OTSU, 11);
-            findContourForBg();
-            return imgThreshold;
+        double threshold =16.0;
+        int erosion_size = 5;
+        Imgproc.GaussianBlur(mCol, mRgb, new Size(3, 3), 0, 0, Core.BORDER_DEFAULT);
+        Mat element = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(2*erosion_size +1,2*erosion_size+1));
+        sub.apply(mRgb, mFGMask); //apply() exports a gray image by definition
+        Imgproc.cvtColor(mFGMask, mCol, Imgproc.COLOR_GRAY2RGBA);
+        final Size ksize = new Size(3, 3);
+        Imgproc.erode(mFGMask,imgThreshold,element);
+        Imgproc.GaussianBlur(mFGMask, imgThreshold,ksize,0);
+        double thresholdedValue = Imgproc.threshold(mFGMask, imgThreshold, threshold, Imgproc.THRESH_BINARY+Imgproc.THRESH_OTSU, 11);
+        findContourForBg();
+        return imgThreshold;
     }
 
     private void findContourForBg() {
@@ -317,18 +354,18 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Imgproc.cvtColor(contoursFrame, contoursFrame, Imgproc.COLOR_GRAY2BGRA);
 
 
-          if (contours.size() > 0)  // Minimum size allowed for consideration
-          {
-              for (int contourIdx=0; contourIdx < contours.size(); contourIdx++ ) {
-                  MatOfPoint  temp = contours.get(contourIdx);
-                  Imgproc.drawContours(contoursFrame, contours, -1, new Scalar(0, 255, 0),5);
-          }
+        if (contours.size() > 0)  // Minimum size allowed for consideration
+        {
+            for (int contourIdx=0; contourIdx < contours.size(); contourIdx++ ) {
+                MatOfPoint  temp = contours.get(contourIdx);
+                Imgproc.drawContours(contoursFrame, contours, -1, new Scalar(0, 255, 0),5);
+            }
         }
         Bitmap cutBitmapped1= matToBitmapConversion(contoursFrame);
         String name1 = "bg1.jpg";
         try {
             //crop the image and save it later:
-         savebitmap(cutBitmapped1, name1);
+            savebitmap(cutBitmapped1, name1);
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -391,7 +428,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         int count =0;
         for (Classifier.Recognition recognition :
                 results) {
-           count++;
+            count++;
             if (recognition.getConfidence() > bestRecognition.getConfidence())
                 bestRecognition = recognition;
             Mat textMap = bitmapToMatConversion(resizedBitmap);
