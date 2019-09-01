@@ -37,6 +37,7 @@ import org.opencv.core.Point;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
+import org.opencv.video.BackgroundSubtractorKNN;
 import org.opencv.video.BackgroundSubtractorMOG2;
 import org.opencv.video.Video;
 
@@ -76,10 +77,10 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     int history =0;
     double bgThreshold=50.0;
     boolean isShadowDetected=false;
-    BackgroundSubtractorMOG2 bgModel =Video.createBackgroundSubtractorMOG2(history,bgThreshold,isShadowDetected);
+    BackgroundSubtractorKNN bgModel =Video.createBackgroundSubtractorKNN(history,bgThreshold,isShadowDetected);
     boolean isBackGroundCaptured = false;
     int gaussianBlurValue = 41;
-    Mat backgroundSubtractionFrame=new Mat();
+    static  Mat backgroundSubtractionFrame=new Mat();
     /**ended here**/
 
     static {
@@ -145,6 +146,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
                    extractGesture(backgroundSubtractionFrame);
 
                 }*/
+                getSavedImage(backgroundSubtractionFrame,"testing_static.jpg");
                 Log.i("Masking : ","Masking capture button Clicked Finished.. ");
                 gestureExtractionButton.setEnabled(false);
             }
@@ -198,6 +200,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         rgba= createRectangleOnFrame(rgbaBilateralFrame);
         //Creation of background model:
         if(!isBackGroundCaptured) {
+
             backgroundSubtractionFrame = inputFrame.rgba();
            // backgroundSubtractionFrame = clipImageOnROI(backgroundSubtractionFrame);
             isBackGroundCaptured=true;
