@@ -69,6 +69,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
 
     /**Strted coding from here newly**/
+    private Button backgroundExtractionButton;
     private Button gestureExtractionButton;
     Mat rgbaBilateralFrame;
     int smoothingFactor =5;
@@ -80,7 +81,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     BackgroundSubtractorKNN bgModel =Video.createBackgroundSubtractorKNN(history,bgThreshold,isShadowDetected);
     boolean isBackGroundCaptured = false;
     int gaussianBlurValue = 41;
-    static  Mat backgroundSubtractionFrame=new Mat();
+    Mat backgroundSubtractionFrame=new Mat();
     /**ended here**/
 
     static {
@@ -135,24 +136,36 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
         mOpenCvCameraView.setCvCameraViewListener(this);
 
-        gestureExtractionButton = findViewById(R.id.ROI);
-        gestureExtractionButton.setEnabled(true);
-        gestureExtractionButton.setOnClickListener(new View.OnClickListener() {
+        backgroundExtractionButton = findViewById(R.id.Background);
+        backgroundExtractionButton.setEnabled(true);
+        backgroundExtractionButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Log.i("Masking : ","Masking capture button Clicked Started.. ");
-                /*if(isBackGroundCaptured) {
-                    //getSavedImage(backgroundSubtractionFrame,"second.jpg");
-                   extractGesture(backgroundSubtractionFrame);
+                Log.i("Masking : ","Background capture button Click Started.. ");
+                getSavedImage(backgroundSubtractionFrame,"backgroundCaptured.jpg");
 
-                }*/
-                getSavedImage(backgroundSubtractionFrame,"testing_static.jpg");
-                Log.i("Masking : ","Masking capture button Clicked Finished.. ");
-                gestureExtractionButton.setEnabled(false);
+                Log.i("Masking : ","Background capture button Click Finished.. ");
+                backgroundExtractionButton.setEnabled(false);
+                gestureExtractionButton.setEnabled(true);
             }
 
         });
 
+        //for the gesture extraction
+        gestureExtractionButton = findViewById(R.id.ROI);
+        gestureExtractionButton.setEnabled(false);
+        gestureExtractionButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Log.i("Masking : ","Gesture capture button Click Started.. ");
+                getSavedImage(rgbaBilateralFrame,"GestureCaptured.jpg");
+                Log.i("Masking : ","Gesture capture button Click Finished.. ");
+                backgroundExtractionButton.setEnabled(false);
+                gestureExtractionButton.setEnabled(true);
+
+            }
+
+        });
 
     }
 
@@ -200,9 +213,8 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         rgba= createRectangleOnFrame(rgbaBilateralFrame);
         //Creation of background model:
         if(!isBackGroundCaptured) {
-
             backgroundSubtractionFrame = inputFrame.rgba();
-           // backgroundSubtractionFrame = clipImageOnROI(backgroundSubtractionFrame);
+            backgroundSubtractionFrame = clipImageOnROI(backgroundSubtractionFrame);
             isBackGroundCaptured=true;
 
         }
@@ -216,14 +228,15 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         //Mat clippedMat;
         Size kSize = new Size(3, 3);
         //remove the background from the filtered frame:
-        backgroundSubtractionFrame = clipImageOnROI(backgroundSubtractionFrame);
-        getSavedImage(backgroundSubtractionFrame,"backgroundClipped.jpg");
+        //backgroundSubtractionFrame = clipImageOnROI(backgroundSubtractionFrame);
+        //getSavedImage(backgroundSubtractionFrame,"backgroundClipped.jpg");
         rgbaBilateralFrame = clipImageOnROI(rgbaBilateralFrame);
-        rgbaBilateralFrame = removeBackgroundFromFrame(backgroundSubtractionFrame,rgbaBilateralFrame);
-        getSavedImage(rgbaBilateralFrame,"removed.jpg");
+        if(!rgbaBilateralFrame.empty())
+           rgbaBilateralFrame = removeBackgroundFromFrame(backgroundSubtractionFrame,rgbaBilateralFrame);
+       // getSavedImage(rgbaBilateralFrame,"removed.jpg");
         Imgproc.cvtColor(rgbaBilateralFrame,rgbaBilateralFrame,Imgproc.COLOR_BGR2GRAY);
         Imgproc.GaussianBlur(rgbaBilateralFrame,rgbaBilateralFrame,kSize,gaussianBlurValue);
-        Imgproc.threshold(rgbaBilateralFrame, rgbaBilateralFrame, 50,0,Imgproc.THRESH_BINARY);
+        //Imgproc.threshold(rgbaBilateralFrame, rgbaBilateralFrame, 50,10,Imgproc.THRESH_BINARY);
 
 
     }
@@ -270,7 +283,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
     private void BackgroundErosion(Mat fgMask) {
         int erosion_size=5;
-
         final Point anchor = new Point(-1,-1);
         final int iteration=2;
         Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(2*erosion_size +1,2*erosion_size+1));
