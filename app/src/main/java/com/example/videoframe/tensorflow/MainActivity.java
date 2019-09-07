@@ -84,7 +84,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     int gaussianBlurValue = 41;
     Mat backgroundSubtractionFrame=new Mat();
 
-    Mat                    mRgba;
+
     Mat                    mIntermediateMat;
     Mat                    mGray;
     Mat hierarchy;
@@ -151,7 +151,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
                 getSavedImage(backgroundSubtractionFrame,"backgroundCaptured.jpg");
 
                 Log.i("Masking : ","Background capture button Click Finished.. ");
-                backgroundExtractionButton.setEnabled(false);
+                backgroundExtractionButton.setEnabled(true);
                 gestureExtractionButton.setEnabled(true);
             }
 
@@ -163,15 +163,17 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         gestureExtractionButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                Mat maskedMat = rgbaBilateralFrame;
                 Log.i("Masking : ","Gesture capture button Click Started.. ");
-                getSavedImage(rgbaBilateralFrame,"GestureCaptured.jpg");
+                getSavedImage(maskedMat,"GestureCaptured.jpg");
                 Log.i("Masking : ","Gesture capture button Click Finished.. ");
-                backgroundExtractionButton.setEnabled(false);
+                backgroundExtractionButton.setEnabled(true);
                 gestureExtractionButton.setEnabled(true);
-                Bitmap maskedBitmap = matToBitmapConversion(rgbaBilateralFrame);
-                findContourForBg(rgbaBilateralFrame);
-                classifyImage(maskedBitmap);
-              //  findContourForBg(rgbaBilateralFrame);
+                Bitmap maskedBitmap = matToBitmapConversion(maskedMat);
+               // findContourForBg(maskedMat);
+                findContourForBg1(maskedMat);
+                //classifyImage(maskedBitmap);
+              //  findContourForBg(maskedMat);
             }
 
         });
@@ -197,7 +199,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
      */
     @Override
     public void onCameraViewStopped() {
-
+        rgbaBilateralFrame.release();
     }
 
     /**
@@ -344,25 +346,30 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Mat hierarchy = new Mat();
         double maxArea= -1;
         int ci =0;
-        MatOfInt hull= null;
-        Imgproc.findContours(contoursFrame, contours, hierarchy, Imgproc.RETR_FLOODFILL, Imgproc.RETR_FLOODFILL);
-        if (contours.size() > 0)  // Minimum size allowed for consideration
+        MatOfInt hull= new MatOfInt();
+        int contourIdx=0;
+        getSavedImage(contoursFrame,"testing.jpg");
+        Imgproc.findContours(contoursFrame, contours, hierarchy, Imgproc.RETR_EXTERNAL , Imgproc.CHAIN_APPROX_NONE);
+        Imgproc.drawContours(contoursFrame, contours, contourIdx, new Scalar(0, 255, 0), 5);
+
+       /* if (contours.size() > 0)  // Minimum size allowed for consideration
         {
-            for (int contourIdx=0; contourIdx < contours.size(); contourIdx++ ) {
+            for (contourIdx=0; contourIdx < contours.size(); contourIdx++ ) {
                 MatOfPoint  temp = contours.get(contourIdx);
                 double area = Imgproc.contourArea(temp);
                 if(area > maxArea){
                     maxArea=area;
                     ci =contourIdx;
                 }
+                *//*MatOfPoint res = contours.get(ci);
+                Imgproc.convexHull(res,hull);
+                // Imgproc.dr*//*
+                Imgproc.drawContours(contoursFrame, contours, contourIdx, new Scalar(0, 255, 0), 5);
             }
-            MatOfPoint res = contours.get(ci);
-            Imgproc.convexHull(res,hull);
-           // Imgproc.dr
-            Imgproc.drawContours(contoursFrame, contours, -1, new Scalar(0, 255, 0),5);
-        }
-        getSavedImage(rgbaBilateralFrame,"countour.jpg");
-        return rgbaBilateralFrame;
+
+        }*/
+        getSavedImage(contoursFrame,"countour.jpg");
+        return contoursFrame;
 
        /* List<MatOfPoint> contours;
         contours = new ArrayList<MatOfPoint>();
@@ -377,6 +384,49 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Imgproc.drawContours(rgbaBilateralFrame, contours, -1, new Scalar(0, 255, 0));//, 2, 8, hierarchy, 0, new Point());
         getSavedImage(rgbaBilateralFrame,"countour.jpg");
         return rgbaBilateralFrame;*/
+    }
+
+
+
+
+    void findContourForBg1(Mat originalMat) {
+        Mat hierarchy = new Mat();
+        Bitmap currentBitmap=null;
+        List<MatOfPoint> contourList = new ArrayList<MatOfPoint>(); //A list to store all the contours
+        Imgproc.findContours(originalMat, contourList, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
+        Mat contours = new Mat();
+        contours.create(originalMat.rows(), originalMat.cols(), CvType.CV_8UC3);
+        for ( int i = 0; i < contourList.size(); i++)
+        {
+            MatOfPoint contour=contourList.get(i);
+            double area = Imgproc.contourArea(contour);
+            if(area > 100)
+            Imgproc.drawContours(contours, contourList, i, new Scalar(255, 0, 0), 2);
+        }
+        //Converting Mat back to Bitmap
+        putText(contours,"Palm");
+        currentBitmap = matToBitmapConversion(contours);
+        try {
+            savebitmap(currentBitmap,"contour.jpg");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+
+    public void onDestroy() {
+        super.onDestroy();
+        if (mOpenCvCameraView != null)
+            mOpenCvCameraView.disableView();
+    }
+
+    @Override
+    public void onPause()
+    {
+        super.onPause();
+        if (mOpenCvCameraView != null)
+            mOpenCvCameraView.disableView();
     }
 
     private void putText(Mat imgThreshold,String recognitionValue){
