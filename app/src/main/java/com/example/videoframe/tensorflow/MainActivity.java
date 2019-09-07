@@ -32,6 +32,7 @@ import org.opencv.android.Utils;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfInt;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.Point;
 import org.opencv.core.Scalar;
@@ -82,6 +83,11 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     boolean isBackGroundCaptured = false;
     int gaussianBlurValue = 41;
     Mat backgroundSubtractionFrame=new Mat();
+
+    Mat                    mRgba;
+    Mat                    mIntermediateMat;
+    Mat                    mGray;
+    Mat hierarchy;
     /**ended here**/
 
     static {
@@ -162,7 +168,10 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
                 Log.i("Masking : ","Gesture capture button Click Finished.. ");
                 backgroundExtractionButton.setEnabled(false);
                 gestureExtractionButton.setEnabled(true);
-
+                Bitmap maskedBitmap = matToBitmapConversion(rgbaBilateralFrame);
+                findContourForBg(rgbaBilateralFrame);
+                classifyImage(maskedBitmap);
+              //  findContourForBg(rgbaBilateralFrame);
             }
 
         });
@@ -221,23 +230,21 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         if(isBackGroundCaptured) {
             extractGesture(backgroundSubtractionFrame);
         }
+
         return rgba;
     }
 
     private void extractGesture(Mat backgroundSubtractionFrame) {
-        //Mat clippedMat;
         Size kSize = new Size(3, 3);
         //remove the background from the filtered frame:
-        //backgroundSubtractionFrame = clipImageOnROI(backgroundSubtractionFrame);
-        //getSavedImage(backgroundSubtractionFrame,"backgroundClipped.jpg");
         rgbaBilateralFrame = clipImageOnROI(rgbaBilateralFrame);
-        if(!rgbaBilateralFrame.empty())
-           rgbaBilateralFrame = removeBackgroundFromFrame(backgroundSubtractionFrame,rgbaBilateralFrame);
-       // getSavedImage(rgbaBilateralFrame,"removed.jpg");
-        Imgproc.cvtColor(rgbaBilateralFrame,rgbaBilateralFrame,Imgproc.COLOR_BGR2GRAY);
-        Imgproc.GaussianBlur(rgbaBilateralFrame,rgbaBilateralFrame,kSize,gaussianBlurValue);
-        //Imgproc.threshold(rgbaBilateralFrame, rgbaBilateralFrame, 50,10,Imgproc.THRESH_BINARY);
+        if(!rgbaBilateralFrame.empty()) {
+        rgbaBilateralFrame = removeBackgroundFromFrame(backgroundSubtractionFrame, rgbaBilateralFrame);
 
+        }
+        Imgproc.cvtColor(rgbaBilateralFrame, rgbaBilateralFrame, Imgproc.COLOR_BGR2GRAY);
+        Imgproc.GaussianBlur(rgbaBilateralFrame, rgbaBilateralFrame, kSize, gaussianBlurValue);
+        double thresholdedValue = Imgproc.threshold(rgbaBilateralFrame, rgbaBilateralFrame, 50, 10, Imgproc.THRESH_BINARY);
 
     }
 
@@ -262,7 +269,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     }
 
     private Mat removeBackgroundFromFrame(Mat backgroundSubtractionFrame,Mat rgbaBilateralFrame){
-        double learningRate=0;
         Mat mRgb = new Mat();
 
         Mat fgMask = new Mat();
@@ -332,59 +338,45 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         canvas.drawBitmap(origialBitmap, srcRect, desRect, null);
         return cutBitmap;
     }
-    public Mat  backgroundSubtraction(Mat mRgb,Mat mCol) {
-        double threshold =16.0;
-        int erosion_size = 5;
-        Imgproc.GaussianBlur(mCol, mRgb, new Size(3, 3), 0, 0, Core.BORDER_DEFAULT);
-        Mat element = Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(2*erosion_size +1,2*erosion_size+1));
-        sub.apply(mRgb, mFGMask); //apply() exports a gray image by definition
-        Imgproc.cvtColor(mFGMask, mCol, Imgproc.COLOR_GRAY2RGBA);
-        final Size ksize = new Size(3, 3);
-        Imgproc.erode(mFGMask,imgThreshold,element);
-        Imgproc.GaussianBlur(mFGMask, imgThreshold,ksize,0);
-        double thresholdedValue = Imgproc.threshold(mFGMask, imgThreshold, threshold, Imgproc.THRESH_BINARY+Imgproc.THRESH_OTSU, 11);
-        findContourForBg();
-        return imgThreshold;
-    }
-
-    private void findContourForBg() {
+    private Mat findContourForBg(Mat rgbaBilateralFrame) {
+        Mat contoursFrame = rgbaBilateralFrame.clone();
         List<MatOfPoint> contours = new ArrayList<MatOfPoint>();
         Mat hierarchy = new Mat();
-        int  contoursCounter = contours.size();
-        Bitmap bitmap = matToBitmapConversion(imgThreshold);
-        Bitmap cutBitmap = clipImageMat(bitmap);
-        Mat croppedMat = bitmapToMatConversion(cutBitmap);
-        Bitmap cutBitmapped = matToBitmapConversion(croppedMat);
-        classifyImage(cutBitmapped);
-        String name = "bg.jpg";
-        try {
-            //crop the image and save it later:
-            savebitmap(cutBitmapped, name);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        Mat contoursFrame = croppedMat.clone();
-        Imgproc.cvtColor(croppedMat, contoursFrame, Imgproc.COLOR_BGRA2GRAY);
-        Imgproc.findContours(contoursFrame, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
-        Imgproc.cvtColor(contoursFrame, contoursFrame, Imgproc.COLOR_GRAY2BGRA);
-
-
+        double maxArea= -1;
+        int ci =0;
+        MatOfInt hull= null;
+        Imgproc.findContours(contoursFrame, contours, hierarchy, Imgproc.RETR_FLOODFILL, Imgproc.RETR_FLOODFILL);
         if (contours.size() > 0)  // Minimum size allowed for consideration
         {
             for (int contourIdx=0; contourIdx < contours.size(); contourIdx++ ) {
                 MatOfPoint  temp = contours.get(contourIdx);
-                Imgproc.drawContours(contoursFrame, contours, -1, new Scalar(0, 255, 0),5);
+                double area = Imgproc.contourArea(temp);
+                if(area > maxArea){
+                    maxArea=area;
+                    ci =contourIdx;
+                }
             }
+            MatOfPoint res = contours.get(ci);
+            Imgproc.convexHull(res,hull);
+           // Imgproc.dr
+            Imgproc.drawContours(contoursFrame, contours, -1, new Scalar(0, 255, 0),5);
         }
-        Bitmap cutBitmapped1= matToBitmapConversion(contoursFrame);
-        String name1 = "bg1.jpg";
-        try {
-            //crop the image and save it later:
-            savebitmap(cutBitmapped1, name1);
+        getSavedImage(rgbaBilateralFrame,"countour.jpg");
+        return rgbaBilateralFrame;
 
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+       /* List<MatOfPoint> contours;
+        contours = new ArrayList<MatOfPoint>();
+        hierarchy = new Mat();
+        Mat contoursFrame = rgbaBilateralFrame.clone();
+        mIntermediateMat = new Mat();
+        Imgproc.Canny(rgbaBilateralFrame, mIntermediateMat, 80, 100);
+        //Imgproc.cvtColor(mIntermediateMat, contoursFrame, Imgproc.COLOR_BGRA2GRAY);
+        Imgproc.findContours(contoursFrame, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE, new Point(0, 0));
+       // Imgproc.cvtColor(hierarchy, hierarchy, Imgproc.COLOR_GRAY2BGRA);
+        hierarchy.release();
+        Imgproc.drawContours(rgbaBilateralFrame, contours, -1, new Scalar(0, 255, 0));//, 2, 8, hierarchy, 0, new Point());
+        getSavedImage(rgbaBilateralFrame,"countour.jpg");
+        return rgbaBilateralFrame;*/
     }
 
     private void putText(Mat imgThreshold,String recognitionValue){
