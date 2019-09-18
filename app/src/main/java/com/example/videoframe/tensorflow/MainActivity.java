@@ -16,6 +16,7 @@ import android.view.SurfaceView;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.TextView;
 
 import com.example.videoframe.R;
 import com.example.videoframe.tensorflow.classifier.Classifier;
@@ -51,7 +52,6 @@ import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements CvCameraViewListener2{
     private CameraBridgeViewBase mOpenCvCameraView;
-    public  CvCameraViewListener2 camListener;
     private BackgroundSubtractorMOG2 sub = Video.createBackgroundSubtractorMOG2();
     // Storage Permissions
     private static final int REQUEST_EXTERNAL_STORAGE = 1;
@@ -59,17 +59,8 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
     };
-    Mat  imageMat;
-    Mat firstImageFrame ;
-    Mat nextImageFrame ;
-    Mat imgThreshold = new Mat();
-    private Mat mFGMask = new Mat();
-    double blurValue = 41.0;  // GaussianBlur parameter
-    private ArrayList<MatOfPoint> findContoursOutput = new ArrayList<>();
-    private Mat hsvThresholdOutput = new Mat();
 
-
-    /**Strted coding from here newly**/
+    /**Started coding from here newly**/
     private Button backgroundExtractionButton;
     private Button gestureExtractionButton;
     Mat rgbaBilateralFrame;
@@ -81,13 +72,10 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     boolean isShadowDetected=false;
     BackgroundSubtractorKNN bgModel =Video.createBackgroundSubtractorKNN(history,bgThreshold,isShadowDetected);
     boolean isBackGroundCaptured = false;
-    int gaussianBlurValue = 41;
     Mat backgroundSubtractionFrame=new Mat();
-
-
-    Mat                    mIntermediateMat;
-    Mat                    mGray;
-    Mat hierarchy;
+    boolean isGestureButtonClicked = false;
+    private TextView gestureTextView;
+    Mat rgba = new Mat();
     /**ended here**/
 
     static {
@@ -142,17 +130,21 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
         mOpenCvCameraView.setCvCameraViewListener(this);
 
+        gestureTextView = (TextView) findViewById(R.id.gesture_view);
+        gestureTextView.setText("Gesture Detected : ");
         backgroundExtractionButton = findViewById(R.id.Background);
         backgroundExtractionButton.setEnabled(true);
         backgroundExtractionButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 Log.i("Masking : ","Background capture button Click Started.. ");
+                isBackGroundCaptured=true;
+                //getBackgroundCaptured(rgbaBilateralFrame, isBackGroundCaptured);
                 getSavedImage(backgroundSubtractionFrame,"backgroundCaptured.jpg");
-
                 Log.i("Masking : ","Background capture button Click Finished.. ");
-                backgroundExtractionButton.setEnabled(true);
+                backgroundExtractionButton.setEnabled(false);
                 gestureExtractionButton.setEnabled(true);
+
             }
 
         });
@@ -163,17 +155,19 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         gestureExtractionButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Mat maskedMat = rgbaBilateralFrame;
+                isGestureButtonClicked=true;
+               // extractGesture(rgbaBilateralFrame,isGestureButtonClicked);
                 Log.i("Masking : ","Gesture capture button Click Started.. ");
-                getSavedImage(maskedMat,"GestureCaptured.jpg");
-                Log.i("Masking : ","Gesture capture button Click Finished.. ");
+              //  Imgproc.cvtColor(rgbaBilateralFrame,rgbaBilateralFrame,Imgproc.COLOR_BGR2GRAY);
                 backgroundExtractionButton.setEnabled(true);
-                gestureExtractionButton.setEnabled(true);
-                Bitmap maskedBitmap = matToBitmapConversion(maskedMat);
-               // findContourForBg(maskedMat);
-                findContourForBg1(maskedMat);
-                //classifyImage(maskedBitmap);
-              //  findContourForBg(maskedMat);
+                gestureExtractionButton.setEnabled(false);
+              //  findContourForBg1(rgbaBilateralFrame);
+                getSavedImage(rgbaBilateralFrame,"gesturebutton.jpg");
+                Bitmap maskedBitmap = matToBitmapConversion(rgbaBilateralFrame);
+                String imagePredicted =classifyImage(maskedBitmap);
+                putText(rgba,imagePredicted);
+                Log.i("Masking : ","Gesture capture button Click Finished.. ");
+
             }
 
         });
@@ -211,11 +205,10 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
      */
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-
         Mat rgbaFrame = inputFrame.rgba();
-        Mat rgba = new Mat();
-        double thresholdValue=50;
-        Mat clippedMat = new Mat();
+
+     /*   double thresholdValue=50;
+        Mat clippedMat = new Mat();*/
         Imgproc.cvtColor(rgbaFrame,rgbaFrame,Imgproc.COLOR_BGRA2RGB);
         rgbaBilateralFrame = rgbaFrame.clone();
         //bilateral filtering : smoothing
@@ -223,36 +216,46 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         //cration of rectangle on the current frame:
         rgba= createRectangleOnFrame(rgbaBilateralFrame);
         //Creation of background model:
-        if(!isBackGroundCaptured) {
-            backgroundSubtractionFrame = inputFrame.rgba();
-            backgroundSubtractionFrame = clipImageOnROI(backgroundSubtractionFrame);
-            isBackGroundCaptured=true;
-
-        }
+        getBackgroundCaptured(rgbaFrame,isBackGroundCaptured);
         if(isBackGroundCaptured) {
-            extractGesture(backgroundSubtractionFrame);
+            extractGesture(backgroundSubtractionFrame,isGestureButtonClicked);
+            // String classifiedResult =
+           // gestureTextView.setText(classifiedResult);
         }
 
         return rgba;
     }
 
-    private void extractGesture(Mat backgroundSubtractionFrame) {
+    private boolean getBackgroundCaptured(Mat inputFrame,boolean isBackGroundCaptured) {
+        if(!isBackGroundCaptured) {
+            backgroundSubtractionFrame = clipImageOnROI(inputFrame);
+            isBackGroundCaptured = true;
+        }
+        return isBackGroundCaptured;
+    }
+
+    private void extractGesture(Mat backgroundSubtractionFrame,boolean isGestureButtonClicked) {
         Size kSize = new Size(3, 3);
+        Mat backGroundRemovedMat = new Mat();
         //remove the background from the filtered frame:
         rgbaBilateralFrame = clipImageOnROI(rgbaBilateralFrame);
         if(!rgbaBilateralFrame.empty()) {
-        rgbaBilateralFrame = removeBackgroundFromFrame(backgroundSubtractionFrame, rgbaBilateralFrame);
-
+            backGroundRemovedMat = removeBackgroundFromFrame(backgroundSubtractionFrame, rgbaBilateralFrame);
+          //  getSavedImage(backGroundRemovedMat,"remove.jpg");
+           /* if(isGestureButtonClicked) {
+                Bitmap maskedBitmap = matToBitmapConversion(backGroundRemovedMat);
+                String classifiedResult = classifyImage(maskedBitmap);
+              //  return classifiedResult;
+            }*/
+           // isGestureButtonClicked = false;
         }
-        Imgproc.cvtColor(rgbaBilateralFrame, rgbaBilateralFrame, Imgproc.COLOR_BGR2GRAY);
-        Imgproc.GaussianBlur(rgbaBilateralFrame, rgbaBilateralFrame, kSize, gaussianBlurValue);
-        double thresholdedValue = Imgproc.threshold(rgbaBilateralFrame, rgbaBilateralFrame, 50, 10, Imgproc.THRESH_BINARY);
-
+     // return "";
     }
 
     private void getSavedImage(Mat clippedMat,String name){
         Bitmap bitmap =matToBitmapConversion(clippedMat);
         try {
+
             savebitmap(bitmap,name);
         } catch (IOException e) {
             e.printStackTrace();
@@ -272,19 +275,12 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
     private Mat removeBackgroundFromFrame(Mat backgroundSubtractionFrame,Mat rgbaBilateralFrame){
         Mat mRgb = new Mat();
-
         Mat fgMask = new Mat();
         Imgproc.GaussianBlur(rgbaBilateralFrame, backgroundSubtractionFrame, new Size(3, 3), 0, 0, Core.BORDER_DEFAULT);
         Imgproc.cvtColor(rgbaBilateralFrame,mRgb,Imgproc.COLOR_RGBA2RGB);
         bgModel.apply(mRgb,fgMask);
         Imgproc.cvtColor(fgMask, rgbaBilateralFrame, Imgproc.COLOR_GRAY2RGBA);
         BackgroundErosion(fgMask);
-        try{
-            Thread.sleep(1000);
-        }catch(InterruptedException e){
-            Log.i("TAG","The thread has been interrupted by another process");
-        }
-
         return rgbaBilateralFrame;
 
     }
@@ -351,48 +347,16 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         getSavedImage(contoursFrame,"testing.jpg");
         Imgproc.findContours(contoursFrame, contours, hierarchy, Imgproc.RETR_EXTERNAL , Imgproc.CHAIN_APPROX_NONE);
         Imgproc.drawContours(contoursFrame, contours, contourIdx, new Scalar(0, 255, 0), 5);
-
-       /* if (contours.size() > 0)  // Minimum size allowed for consideration
-        {
-            for (contourIdx=0; contourIdx < contours.size(); contourIdx++ ) {
-                MatOfPoint  temp = contours.get(contourIdx);
-                double area = Imgproc.contourArea(temp);
-                if(area > maxArea){
-                    maxArea=area;
-                    ci =contourIdx;
-                }
-                *//*MatOfPoint res = contours.get(ci);
-                Imgproc.convexHull(res,hull);
-                // Imgproc.dr*//*
-                Imgproc.drawContours(contoursFrame, contours, contourIdx, new Scalar(0, 255, 0), 5);
-            }
-
-        }*/
         getSavedImage(contoursFrame,"countour.jpg");
         return contoursFrame;
-
-       /* List<MatOfPoint> contours;
-        contours = new ArrayList<MatOfPoint>();
-        hierarchy = new Mat();
-        Mat contoursFrame = rgbaBilateralFrame.clone();
-        mIntermediateMat = new Mat();
-        Imgproc.Canny(rgbaBilateralFrame, mIntermediateMat, 80, 100);
-        //Imgproc.cvtColor(mIntermediateMat, contoursFrame, Imgproc.COLOR_BGRA2GRAY);
-        Imgproc.findContours(contoursFrame, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE, new Point(0, 0));
-       // Imgproc.cvtColor(hierarchy, hierarchy, Imgproc.COLOR_GRAY2BGRA);
-        hierarchy.release();
-        Imgproc.drawContours(rgbaBilateralFrame, contours, -1, new Scalar(0, 255, 0));//, 2, 8, hierarchy, 0, new Point());
-        getSavedImage(rgbaBilateralFrame,"countour.jpg");
-        return rgbaBilateralFrame;*/
     }
-
-
 
 
     void findContourForBg1(Mat originalMat) {
         Mat hierarchy = new Mat();
         Bitmap currentBitmap=null;
-        List<MatOfPoint> contourList = new ArrayList<MatOfPoint>(); //A list to store all the contours
+        List<MatOfPoint> contourList = new ArrayList<MatOfPoint>();
+        //A list to store all the contours
         Imgproc.findContours(originalMat, contourList, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
         Mat contours = new Mat();
         contours.create(originalMat.rows(), originalMat.cols(), CvType.CV_8UC3);
@@ -401,7 +365,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             MatOfPoint contour=contourList.get(i);
             double area = Imgproc.contourArea(contour);
             if(area > 100)
-            Imgproc.drawContours(contours, contourList, i, new Scalar(255, 0, 0), 2);
+                Imgproc.drawContours(contours, contourList, i, new Scalar(255, 0, 0), 2);
         }
         //Converting Mat back to Bitmap
         putText(contours,"Palm");
@@ -431,7 +395,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
     private void putText(Mat imgThreshold,String recognitionValue){
         //TODO: Add the text of detection on robot in a textfield possibly
-        Imgproc.putText(imgThreshold, recognitionValue, new Point(imgThreshold.width() / 2,30), Core.FONT_HERSHEY_PLAIN, 2, new Scalar(0,255,255),3);
+        Imgproc.putText(imgThreshold, recognitionValue, new Point(imgThreshold.width() / 2,30), Core.FONT_HERSHEY_PLAIN, 2, new Scalar(255,255,255),3);
     }
 
     private  void savebitmap(Bitmap bmp , String name) throws IOException {
@@ -467,7 +431,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         }
     }
 
-    public void classifyImage(Bitmap bitmap) {
+    public String classifyImage(Bitmap bitmap) {
         Classifier classifier =
                 ImageClassifier.create(
                         getAssets(),
@@ -480,6 +444,8 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
                         Constant.OUTPUT_NAME);
 
         Bitmap resizedBitmap = UtilsClassify.getResizedBitmap(bitmap, Constant.INPUT_SIZE, Constant.INPUT_SIZE, false);
+        Mat resizedMat = bitmapToMatConversion(resizedBitmap);
+        getSavedImage(resizedMat,"Classify.jpg");
         List<Classifier.Recognition> results = classifier.recognizeImage(resizedBitmap);
         bestRecognition = new Classifier.Recognition("test", "testObject", 0.0f);
         int count =0;
@@ -488,19 +454,22 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             count++;
             if (recognition.getConfidence() > bestRecognition.getConfidence())
                 bestRecognition = recognition;
-            Mat textMap = bitmapToMatConversion(resizedBitmap);
 
-            Log.i("Prediction : ****", String.valueOf(bestRecognition.getConfidence()));
-            putText(textMap,String.valueOf(bestRecognition.getConfidence()));
-            putText(textMap,bestRecognition.getTitle());
-            Log.i("Count : ",String.valueOf (count));
-            Log.i("Name : " , bestRecognition.getTitle());
         }
-        processResult(bestRecognition);
+       // layoutResult(UtilsClassify.getResizedBitmap(bitmap, 1400, 900, true));
+        Mat textMap = bitmapToMatConversion(resizedBitmap);
+
+        Log.i("Prediction : ****", String.valueOf(bestRecognition.getConfidence()));
+        putText(textMap,String.valueOf(bestRecognition.getConfidence()));
+        putText(textMap,bestRecognition.getTitle());
+        Log.i("Count : ",String.valueOf (count));
+        Log.i("Name : " , bestRecognition.getTitle());
+       // String classifiedResult = processResult(bestRecognition);
+        //String gestureDetected = "Gesture detected: "+" " + bestRecognition.getTitle() + classifiedResult;
+        return bestRecognition.getTitle();
     }
 
-    private void processResult(Classifier.Recognition recognition) {
-        String name = bestRecognition.getTitle();
+    private String processResult(Classifier.Recognition recognition) {
         float confidence = recognition.getConfidence() * 100;
         String bookmark;
         if (confidence > 15 && confidence < 40) {
@@ -514,5 +483,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         } else {
             bookmark = "failClassify";
         }
+        return bookmark;
     }
 }
