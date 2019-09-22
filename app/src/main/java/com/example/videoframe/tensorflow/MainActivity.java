@@ -1,65 +1,104 @@
-package com.example.videoframe.tensorflow;
+package uni.gesturedetectiononpepper;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+
+
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Matrix;
 import android.graphics.Rect;
-import android.os.Build;
+import android.hardware.Camera;
+import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.Settings;
 import android.support.v4.app.ActivityCompat;
-import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.SurfaceView;
 import android.view.View;
-import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
-import com.example.videoframe.R;
-import com.example.videoframe.tensorflow.classifier.Classifier;
-import com.example.videoframe.tensorflow.classifier.ImageClassifier;
-import com.example.videoframe.tensorflow.utils.Constant;
-import com.example.videoframe.tensorflow.utils.UtilsClassify;
+import com.aldebaran.qi.Future;
+import com.aldebaran.qi.sdk.QiContext;
+import com.aldebaran.qi.sdk.QiSDK;
+import com.aldebaran.qi.sdk.RobotLifecycleCallbacks;
+import com.aldebaran.qi.sdk.builder.SayBuilder;
+import com.aldebaran.qi.sdk.builder.TakePictureBuilder;
+import com.aldebaran.qi.sdk.core.QiThreadPool;
+import com.aldebaran.qi.sdk.design.activity.RobotActivity;
+import com.aldebaran.qi.sdk.object.camera.TakePicture;
+import com.aldebaran.qi.sdk.object.conversation.Say;
+import com.aldebaran.qi.sdk.object.image.EncodedImage;
+import com.aldebaran.qi.sdk.object.image.EncodedImageHandle;
+import com.aldebaran.qi.sdk.object.image.TimestampedImageHandle;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase;
-import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
-import org.opencv.android.Utils;
 import org.opencv.core.Core;
+import org.opencv.core.CvException;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfInt;
 import org.opencv.core.MatOfPoint;
+import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
+import org.opencv.core.Range;
+import org.opencv.core.RotatedRect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
-import org.opencv.video.BackgroundSubtractorKNN;
-import org.opencv.video.BackgroundSubtractorMOG2;
-import org.opencv.video.Video;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+
 import java.io.FileOutputStream;
 import java.io.IOException;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
-public class MainActivity extends AppCompatActivity implements CvCameraViewListener2{
+import org.opencv.android.Utils;
+import org.opencv.video.BackgroundSubtractorKNN;
+import org.opencv.video.Video;
+
+import uni.gesturedetectiononpepper.classifier.Classifier;
+import uni.gesturedetectiononpepper.classifier.ImageClassifier;
+import uni.gesturedetectiononpepper.utils.Constant;
+import uni.gesturedetectiononpepper.utils.UtilsClassify;
+import uni.gesturedetectiononpepper.R;
+
+
+public class MainActivity extends RobotActivity implements RobotLifecycleCallbacks, CameraBridgeViewBase.CvCameraViewListener2 {
     private CameraBridgeViewBase mOpenCvCameraView;
-    private BackgroundSubtractorMOG2 sub = Video.createBackgroundSubtractorMOG2();
-    // Storage Permissions
     private static final int REQUEST_EXTERNAL_STORAGE = 1;
     private static String[] PERMISSIONS_STORAGE = {
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
     };
-
+    static {
+        OpenCVLoader.initDebug();
+    }
+   private String TAG = "Image Capture";
+   private MediaPlayer playerStart;
+   private MediaPlayer playerFlash;
+   private  MediaPlayer playerSuccess;
+    private QiContext qiContext=null;
     /**Started coding from here newly**/
     private Button backgroundExtractionButton;
     private Button gestureExtractionButton;
@@ -70,133 +109,137 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     int history =0;
     double bgThreshold=50.0;
     boolean isShadowDetected=false;
-    BackgroundSubtractorKNN bgModel =Video.createBackgroundSubtractorKNN(history,bgThreshold,isShadowDetected);
+    BackgroundSubtractorKNN bgModel = Video.createBackgroundSubtractorKNN(history,bgThreshold,isShadowDetected);
     boolean isBackGroundCaptured = false;
     Mat backgroundSubtractionFrame=new Mat();
     boolean isGestureButtonClicked = false;
     private TextView gestureTextView;
     Mat rgba = new Mat();
-    int counter = 0;
-    /**ended here**/
-
-    static {
-        OpenCVLoader.initDebug();
-    }
     Classifier.Recognition bestRecognition;
-
+    private TextView textObject;
+    private ImageView gestureDetectedView;
+    private Toast mToast;
+    /**ended here**/
     private BaseLoaderCallback mLoaderCallback = new BaseLoaderCallback(this) {
-        @Override
+
         public void onManagerConnected(int status) {
+            System.out.println("Welcome to OpenCV " + Core.VERSION);
             switch (status) {
-                case LoaderCallbackInterface.SUCCESS:
-                {
+                case LoaderCallbackInterface.SUCCESS: {
                     Log.i("OpenCV", "OpenCV loaded successfully");
-                    // imageMat=new Mat();
                     mOpenCvCameraView.enableView();
-                } break;
-                default:
-                {
+                }
+                break;
+                default: {
                     super.onManagerConnected(status);
-                } break;
+                }
+                break;
             }
         }
     };
 
-    @Override
-    public void onResume()
-    {
-        super.onResume();
-        if (!OpenCVLoader.initDebug()) {
-            Log.d("OpenCV", "Internal OpenCV library not found. Using OpenCV Manager for initialization");
-            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, mLoaderCallback);
-        } else {
-            Log.d("OpenCV", "OpenCV library found inside package. Using it!");
-            mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
-        }
-    }
 
-    @Override
     protected void onCreate(Bundle savedInstanceState) {
-        Log.i("APP", "called onCreate");
         super.onCreate(savedInstanceState);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        String s = "CAMERA";
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.CAMERA}, 1);
-            }
-        }
+        QiSDK.register(this, this);
+        OpenCVLoader.initDebug();
+        setContentView(R.layout.activity_main);
+        // verifyStoragePermissions(this);
+        playerStart = MediaPlayer.create(this, R.raw.ready_sound);
+        playerFlash = MediaPlayer.create(this, R.raw.automatic_camera);
+        playerSuccess = MediaPlayer.create(this, R.raw.success_sound);
+        // textObject = (TextView)findViewById(R.id.txt_object);
+        // textObject.setVisibility(View.GONE);*/
+        playerStart.start();
+        gestureDetectedView = (ImageView)findViewById(R.id.imageView);
+        gestureDetectedView.setVisibility(ImageView.VISIBLE);
         setContentView(R.layout.activity_main);
         mOpenCvCameraView = (CameraBridgeViewBase)findViewById(R.id.HelloOpenCvView);
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
         mOpenCvCameraView.setCvCameraViewListener(this);
-
-        gestureTextView = (TextView) findViewById(R.id.text_overlay);
-        gestureTextView.setText("Gesture Detected : ");
         backgroundExtractionButton = findViewById(R.id.Background);
         backgroundExtractionButton.setEnabled(true);
         backgroundExtractionButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Log.i("Masking : ","Background capture button Click Started.. ");
-                isBackGroundCaptured=true;
+                playerFlash.start();
+                Log.i("Masking : ", "Background capture button Click Started.. ");
+                isBackGroundCaptured = true;
                 //getBackgroundCaptured(rgbaBilateralFrame, isBackGroundCaptured);
-                getSavedImage(backgroundSubtractionFrame,"backgroundCaptured.jpg");
-                Log.i("Masking : ","Background capture button Click Finished.. ");
+                getSavedImage(backgroundSubtractionFrame, "backgroundCaptured.jpg");
+                Log.i("Masking : ", "Background capture button Click Finished.. ");
                 backgroundExtractionButton.setEnabled(false);
                 gestureExtractionButton.setEnabled(true);
 
             }
 
         });
-
         //for the gesture extraction
         gestureExtractionButton = findViewById(R.id.ROI);
         gestureExtractionButton.setEnabled(false);
         gestureExtractionButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                isGestureButtonClicked=true;
+                playerStart.start();
+                isGestureButtonClicked = true;
                 // extractGesture(rgbaBilateralFrame,isGestureButtonClicked);
-                Log.i("Masking : ","Gesture capture button Click Started.. ");
+                Log.i("Masking : ", "Gesture capture button Click Started.. ");
                 //  Imgproc.cvtColor(rgbaBilateralFrame,rgbaBilateralFrame,Imgproc.COLOR_BGR2GRAY);
                 backgroundExtractionButton.setEnabled(true);
                 gestureExtractionButton.setEnabled(false);
                 //  findContourForBg1(rgbaBilateralFrame);
-                getSavedImage(rgbaBilateralFrame,"gesturebutton.jpg");
+                getSavedImage(rgbaBilateralFrame, "gesturebutton.jpg");
                 Bitmap maskedBitmap = matToBitmapConversion(rgbaBilateralFrame);
-                String imagePredicted =classifyImage(maskedBitmap);
-                putText(rgba,imagePredicted);
-                Log.i("Masking : ","Gesture capture button Click Finished.. ");
+                String imagePredicted = classifyImage(maskedBitmap);
+                Log.i("Best recognition", imagePredicted);
+                putText(rgba, imagePredicted);
+                Log.i("Masking : ", "Gesture capture button Click Finished.. ");
+             //   playerSuccess.start();
 
             }
 
         });
+    }
+
+    public void onRobotFocusGained(QiContext qiContext) {
+        this.qiContext = qiContext;
+        Say say = SayBuilder.with(qiContext) // Create the builder with the context.
+                .withText("All right!! Now click on '\'Background Capture' button to Start. ") // Set the text to say.
+                .build(); // Build the say action.
+        say.run();
 
     }
 
+    public void onRobotFocusLost() {
+        this.qiContext = null;
+        Log.i("Capture", "Robot focus is lost.." );
+    }
 
-    /**
-     * This method is invoked when camera preview has started. After this method is invoked
-     * the frames will start to be delivered to client via the onCameraFrame() callback.
-     *
-     * @param width  -  the width of the frames that will be delivered
-     * @param height - the height of the frames that will be delivered
-     */
-    @Override
+
+    public void onRobotFocusRefused(String reason) {
+        Log.i(TAG,reason);
+    }
+
+    public void onResume()
+    {
+        super.onResume();
+        if (!OpenCVLoader.initDebug()) {
+            Log.d("OpenCV", "Internal OpenCV library not found. Using OpenCV Manager for initialization");
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_0_0, this, mLoaderCallback);
+        } else {
+            Log.d("OpenCV", "OpenCV library found inside package. Using it!");
+            mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        }
+    }
+
     public void onCameraViewStarted(int width, int height) {
 
     }
 
-    /**
-     * This method is invoked when camera preview has been stopped for some reason.
-     * No frames will be delivered via onCameraFrame() callback after this method is called.
-     */
-    @Override
-    public void onCameraViewStopped() {
-        rgbaBilateralFrame.release();
-    }
 
+    public void onCameraViewStopped() {
+
+    }
     /**
      * This method is invoked when delivery of the frame needs to be done.
      * The returned values - is a modified frame which needs to be displayed on the screen.
@@ -204,7 +247,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
      *
      * @param inputFrame
      */
-    @Override
+
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
         Mat rgbaFrame = inputFrame.rgba();
 
@@ -216,35 +259,43 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Imgproc.bilateralFilter(rgbaFrame,rgbaBilateralFrame,smoothingFactor,sigmaColor,sigmaSpace);
         //cration of rectangle on the current frame:
         rgba= createRectangleOnFrame(rgbaBilateralFrame);
-        counter++;
         //Creation of background model:
         getBackgroundCaptured(rgbaFrame,isBackGroundCaptured);
-
         if(isGestureButtonClicked) {
-            extractGesture(backgroundSubtractionFrame);
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException ex) {
-            }
+            extractGesture(backgroundSubtractionFrame,isGestureButtonClicked);
+            // String classifiedResult =
+            // gestureTextView.setText(classifiedResult);
         }
-
+        //thread was added initially here. but not sure about this place.. not tested here
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException ex) {
+        }
         return rgba;
     }
-
     private boolean getBackgroundCaptured(Mat inputFrame,boolean isBackGroundCaptured) {
         if(!isBackGroundCaptured) {
+          //  playerStart.start();
             backgroundSubtractionFrame = clipImageOnROI(inputFrame);
             isBackGroundCaptured = true;
         }
         return isBackGroundCaptured;
     }
 
-    private void extractGesture(Mat backgroundSubtractionFrame) {
+    private void extractGesture(Mat backgroundSubtractionFrame,boolean isGestureButtonClicked) {
         //remove the background from the filtered frame:
         rgbaBilateralFrame = clipImageOnROI(rgbaBilateralFrame);
         if(!rgbaBilateralFrame.empty()) {
-            removeBackgroundFromFrame(backgroundSubtractionFrame, rgbaBilateralFrame);
+           removeBackgroundFromFrame(backgroundSubtractionFrame, rgbaBilateralFrame);
+        }else{
+            Log.i("Remove Background" ,"Frame is empty to predict the gesture. Try again");
         }
+        //no idea whether this is required
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException ex) {
+        }
+
     }
 
     private void getSavedImage(Mat clippedMat,String name){
@@ -255,6 +306,11 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+    private Bitmap matToBitmapConversion(Mat imageMat) {
+        Bitmap bitmap = Bitmap.createBitmap(imageMat.cols(), imageMat.rows(), Bitmap.Config.ARGB_8888);
+        Utils.matToBitmap(imageMat, bitmap);
+        return bitmap;
     }
     //This creates a rectangle on the camera frame for the hand to get cropped.
     private Mat createRectangleOnFrame(Mat rgbaBilateralFrame){
@@ -267,7 +323,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Imgproc.rectangle(rgbaBilateralFrame,  new Point(0, 0), new Point( new_width, new_height),new Scalar( 0, 255, 0 ), 5);
         return rgbaBilateralFrame;
     }
-
     private Mat removeBackgroundFromFrame(Mat backgroundSubtractionFrame,Mat rgbaBilateralFrame){
         Mat mRgb = new Mat();
         Mat fgMask = new Mat();
@@ -301,13 +356,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         rgbaBilateralFrame = bitmapToMatConversion(cutBitmap);
         return rgbaBilateralFrame;
     }
-    //ended here as of now:
 
-    private Bitmap matToBitmapConversion(Mat imageMat) {
-        Bitmap bitmap = Bitmap.createBitmap(imageMat.cols(), imageMat.rows(), Bitmap.Config.ARGB_8888);
-        Utils.matToBitmap(imageMat, bitmap);
-        return bitmap;
-    }
     private Mat bitmapToMatConversion(Bitmap imageBitmap){
         Mat convertedMat = new Mat();
         Bitmap bmp32 = imageBitmap.copy(Bitmap.Config.ARGB_8888,true);
@@ -326,61 +375,18 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Bitmap cutBitmap = Bitmap.createBitmap(new_width,
                 new_height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(cutBitmap);
-        Rect desRect = new Rect(0, 0, new_width, new_height);
-        Rect srcRect = new Rect(0, 0, new_width,new_height);
+        android.graphics.Rect desRect = new android.graphics.Rect(0, 0, new_width, new_height);
+        android.graphics.Rect srcRect = new Rect(0, 0, new_width,new_height);
         canvas.drawBitmap(origialBitmap, srcRect, desRect, null);
         return cutBitmap;
     }
-    private Mat findContourForBg(Mat rgbaBilateralFrame) {
-        Mat contoursFrame = rgbaBilateralFrame.clone();
-        List<MatOfPoint> contours = new ArrayList<MatOfPoint>();
-        Mat hierarchy = new Mat();
-        double maxArea= -1;
-        int ci =0;
-        MatOfInt hull= new MatOfInt();
-        int contourIdx=0;
-        getSavedImage(contoursFrame,"testing.jpg");
-        Imgproc.findContours(contoursFrame, contours, hierarchy, Imgproc.RETR_EXTERNAL , Imgproc.CHAIN_APPROX_NONE);
-        Imgproc.drawContours(contoursFrame, contours, contourIdx, new Scalar(0, 255, 0), 5);
-        getSavedImage(contoursFrame,"countour.jpg");
-        return contoursFrame;
-    }
-
-
-    void findContourForBg1(Mat originalMat) {
-        Mat hierarchy = new Mat();
-        Bitmap currentBitmap=null;
-        List<MatOfPoint> contourList = new ArrayList<MatOfPoint>();
-        //A list to store all the contours
-        Imgproc.findContours(originalMat, contourList, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
-        Mat contours = new Mat();
-        contours.create(originalMat.rows(), originalMat.cols(), CvType.CV_8UC3);
-        for ( int i = 0; i < contourList.size(); i++)
-        {
-            MatOfPoint contour=contourList.get(i);
-            double area = Imgproc.contourArea(contour);
-            if(area > 100)
-                Imgproc.drawContours(contours, contourList, i, new Scalar(255, 0, 0), 2);
-        }
-        //Converting Mat back to Bitmap
-        putText(contours,"Palm");
-        currentBitmap = matToBitmapConversion(contours);
-        try {
-            savebitmap(currentBitmap,"contour.jpg");
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-    }
-
-
     public void onDestroy() {
         super.onDestroy();
+        QiSDK.unregister(this, this);
         if (mOpenCvCameraView != null)
             mOpenCvCameraView.disableView();
     }
 
-    @Override
     public void onPause()
     {
         super.onPause();
@@ -390,7 +396,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
     private void putText(Mat imgThreshold,String recognitionValue){
         //TODO: Add the text of detection on robot in a textfield possibly
-        Imgproc.putText(imgThreshold, recognitionValue, new Point(imgThreshold.width() / 2,30), Core.FONT_HERSHEY_PLAIN, 2, new Scalar(255,255,255),3);
+        //Imgproc.putText(imgThreshold, recognitionValue, new Point(imgThreshold.width() / 2,30), Core.FONT_HERSHEY_PLAIN, 2, new Scalar(255,255,255),3);
     }
 
     private  void savebitmap(Bitmap bmp , String name) throws IOException {
@@ -405,13 +411,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         fo.close();
 
     }
-    /**
-     * Checks if the app has permission to write to device storage
-     *
-     * If the app does not has permission then the user will be prompted to grant permissions
-     *
-     * @param activity
-     */
     public static void verifyStoragePermissions(Activity activity) {
         // Check if we have write permission
         int permission = ActivityCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE);
@@ -425,7 +424,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             );
         }
     }
-
     public String classifyImage(Bitmap bitmap) {
         Classifier classifier =
                 ImageClassifier.create(
@@ -440,46 +438,142 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
         Bitmap resizedBitmap = UtilsClassify.getResizedBitmap(bitmap, Constant.INPUT_SIZE, Constant.INPUT_SIZE, false);
         Mat resizedMat = bitmapToMatConversion(resizedBitmap);
+        runOnUiThread(() -> gestureDetectedView.setImageBitmap(bitmap));
         getSavedImage(resizedMat,"Classify.jpg");
         List<Classifier.Recognition> results = classifier.recognizeImage(resizedBitmap);
-        bestRecognition = new Classifier.Recognition("test", "testObject", 0.0f);
+        bestRecognition = new Classifier.Recognition("None", "NoGesture", 0.0f);
         int count =0;
         for (Classifier.Recognition recognition :
                 results) {
             count++;
             if (recognition.getConfidence() > bestRecognition.getConfidence())
                 bestRecognition = recognition;
-            String recognitionClassID =  bestRecognition.getId();
-            Log.i("Best Recognition:" , recognitionClassID);
-            gestureTextView.setText(recognitionClassID);
-        }
-        // layoutResult(UtilsClassify.getResizedBitmap(bitmap, 1400, 900, true));
-        Mat textMap = bitmapToMatConversion(resizedBitmap);
 
-        Log.i("Prediction : ****", String.valueOf(bestRecognition.getConfidence()));
+        }
+        displayGestureOnScreen();
+
+        // layoutResult(UtilsClassify.getResizedBitmap(bitmap, 1400, 900, true));
+     //   Mat textMap = bitmapToMatConversion(resizedBitmap);
+
+/*        Log.i("Prediction : ****", String.valueOf(bestRecognition.getConfidence()));
         putText(textMap,String.valueOf(bestRecognition.getConfidence()));
         putText(textMap,bestRecognition.getTitle());
-        Log.i("Count : ",String.valueOf (count));
+        Log.i("Count : ",String.valueOf (count));*/
         Log.i("Name : " , bestRecognition.getTitle());
         // String classifiedResult = processResult(bestRecognition);
         //String gestureDetected = "Gesture detected: "+" " + bestRecognition.getTitle() + classifiedResult;
+        float confidence = bestRecognition.getConfidence() * 100;
+        playerSuccess.start();
+        new AlertDialog.Builder(this)
+                .setTitle("Information")
+                .setMessage("Detected Gesture is :" + bestRecognition.getTitle()+"("+confidence+")%")
+                .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        // Continue with delete operation
+                    }
+                }).show();
+      //  actionOnDetectedGesture(bestRecognition);
+
+     /*   Say say = SayBuilder.with(qiContext) // Create the builder with the context.
+                .withText("Gesture detected as.. " + name) // Set the text to say.
+                .build(); // Build the say action.
+
+        // Execute the action.
+        say.run();*/
+
+        //  QiThreadPool.run(() -> processResult(bestRecognition));
+
         return bestRecognition.getTitle();
     }
 
-    private String processResult(Classifier.Recognition recognition) {
-        float confidence = recognition.getConfidence() * 100;
-        String bookmark;
-        if (confidence > 15 && confidence < 40) {
-            bookmark = "classify20";
-        } else if (confidence > 40 && confidence < 60) {
-            bookmark = "classify50";
-        } else if (confidence > 60 && confidence < 80) {
-            bookmark = "classify70";
-        } else if (confidence > 80) {
-            bookmark = "classify90";
-        } else {
-            bookmark = "failClassify";
-        }
-        return bookmark;
+    private void displayGestureOnScreen() {
+        float confidence = bestRecognition.getConfidence() * 100;
+        String name = bestRecognition.getTitle();
+        String message="";
+        if(confidence < 99.0) {
+            message = "Gesture is not properly detected.Try again!!";
+       }
+        else{
+              if (mToast != null && mToast.getView().isShown())
+                     mToast.cancel(); // Close the toast if it is already open
+                     message = "Detected Gesture is :" + bestRecognition.getTitle() + "(" + confidence + ")";
+
+       }
+        int duration = Toast.LENGTH_LONG;
+        mToast = Toast.makeText(this, message, duration);
+        mToast.show();
     }
+
+    private void processResult(Classifier.Recognition recognition) {
+        String name = recognition.getTitle();
+        float confidence = recognition.getConfidence() * 100;
+        textObject.setText(getString(R.string.txt_object_text,name, String.format(Locale.getDefault(), "%.2f",confidence)));
+        textObject.setVisibility(View.VISIBLE);
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(R.string.title_message)
+                .setMessage(R.string.title_detected_gesture)
+                .setPositiveButton(R.string.txt_object_text + name, (dialog, which) -> {
+                    startActivityForResult(new Intent(Settings.ACTION_LOCALE_SETTINGS), 0);
+                })
+                .setIcon(android.R.drawable.btn_dialog)
+                .show();
+         Say say = SayBuilder.with(this.qiContext) // Create the builder with the context.
+                .withText("Gesture detected as.. " + name) // Set the text to say.
+                .build(); // Build the say action.
+
+        // Execute the action.
+        say.run();
+       // playerSuccess.start();
+
+
+    }
+
+    private void actionOnDetectedGesture(Classifier.Recognition recognition){
+        String name = recognition.getTitle();
+        Float confidence = recognition.getConfidence();
+        if(name.equalsIgnoreCase("L")){
+
+
+        }else if(name.equalsIgnoreCase("Peace")){
+
+            String locationName = " university of Rostock";
+            String locationDescription = "Department of Computer Science. Building AE22";
+
+
+            Say sayName = SayBuilder.with(qiContext).withText("This Location is "+locationName).build();
+            Say sayDescription = SayBuilder.with(qiContext)
+                    .withText(locationDescription)
+                    .build();
+
+            sayName.run();
+            sayDescription.run();
+
+        }else if(name.equalsIgnoreCase("Palm")){
+
+        }else if(name.equalsIgnoreCase("Fist")){
+
+        }else if(name.equalsIgnoreCase("Okay")){
+
+        }else{
+              /*  if(confidence < 99.0){
+                    displayGestureOnScreen();
+                }*/
+        }
+
+
+    }
+
+/*    private void holdAbilities(QiContext qiContext) {
+        // Build the holder for the abilities.
+        Holder holder = HolderBuilder.with(qiContext)
+                .withAutonomousAbilities(
+                        AutonomousAbilitiesType.BACKGROUND_MOVEMENT,
+                        AutonomousAbilitiesType.BASIC_AWARENESS,
+                        AutonomousAbilitiesType.AUTONOMOUS_BLINKING
+                )
+                .build();
+
+        // Hold the abilities asynchronously.
+        Future<Void> holdFuture = holder.async().hold();
+    }*/
 }
