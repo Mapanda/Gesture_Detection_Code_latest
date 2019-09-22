@@ -2,7 +2,7 @@
  * Copyright (C) 2018 SoftBank Robotics Europe
  * See COPYING for the license
  */
-package com.example.videoframe.tensorflow.classifier;
+package uni.gesturedetectiononpepper.classifier;
 
 import android.graphics.Bitmap;
 
