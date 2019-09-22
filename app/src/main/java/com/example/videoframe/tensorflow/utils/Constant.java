@@ -2,7 +2,7 @@
  * Copyright (C) 2018 SoftBank Robotics Europe
  * See COPYING for the license
  */
-package com.example.videoframe.tensorflow.utils;
+package uni.gesturedetectiononpepper.utils;
 
 /**
  * The constant class for TensorFlow
@@ -14,7 +14,7 @@ public class Constant {
     }
 
     public static final int INPUT_SIZE = 224;
-    public static final int IMAGE_MEAN = 117;
+    public static final int IMAGE_MEAN = 255;
     public static final float IMAGE_STD = 1;
     public static final String INPUT_NAME = "input_2";
     public static final String OUTPUT_NAME = "dense_2/Softmax";
