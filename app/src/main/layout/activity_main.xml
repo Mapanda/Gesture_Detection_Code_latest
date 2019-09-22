@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="top"
+    android:orientation="horizontal"
+    xmlns:opencv="http://schemas.android.com/apk/res-auto">
+
+
+    <!-- <TextView
+        android:id="@+id/txt_object"
+        android:layout_alignParentTop="false"
+        android:layout_width="40dp"
+        android:layout_height="52dp"
+        android:gravity="center"
+        android:paddingStart="25dip"
+        android:paddingEnd="25dip"
+        android:textColor="@android:color/white"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:text="test"
+        android:layout_toLeftOf="@id/HelloOpenCvView"
+        android:visibility="gone" /> -->
+
+    <org.opencv.android.JavaCameraView
+        android:id="@+id/HelloOpenCvView"
+        android:layout_width="match_parent"
+        android:layout_height="627dp"
+        android:text="Gesture Captured"
+        android:visibility="visible"
+        opencv:camera_id="any"
+        opencv:show_fps="true" />
+
+    <ImageView
+        android:id="@+id/imageView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_toLeftOf="@id/HelloOpenCvView"
+        android:visibility="visible"
+        opencv:srcCompat="?attr/actionBarDivider" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:orientation="horizontal">
+
+    <Button
+        android:id="@+id/Background"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="false"
+        android:layout_toLeftOf="@id/ROI"
+        android:layout_weight="0.5"
+        android:text="Background Capture" />
+
+    <Button
+        android:id="@+id/ROI"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_weight="0.5"
+        android:layout_alignTop="@id/ROI"
+        android:text="Gesture Extraction" />
+
+    </LinearLayout>
+</RelativeLayout>
