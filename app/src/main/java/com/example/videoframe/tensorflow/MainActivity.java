@@ -76,6 +76,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     boolean isGestureButtonClicked = false;
     private TextView gestureTextView;
     Mat rgba = new Mat();
+    int counter = 0;
     /**ended here**/
 
     static {
@@ -130,7 +131,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
         mOpenCvCameraView.setCvCameraViewListener(this);
 
-        gestureTextView = (TextView) findViewById(R.id.gesture_view);
+        gestureTextView = (TextView) findViewById(R.id.text_overlay);
         gestureTextView.setText("Gesture Detected : ");
         backgroundExtractionButton = findViewById(R.id.Background);
         backgroundExtractionButton.setEnabled(true);
@@ -156,12 +157,12 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             @Override
             public void onClick(View v) {
                 isGestureButtonClicked=true;
-               // extractGesture(rgbaBilateralFrame,isGestureButtonClicked);
+                // extractGesture(rgbaBilateralFrame,isGestureButtonClicked);
                 Log.i("Masking : ","Gesture capture button Click Started.. ");
-              //  Imgproc.cvtColor(rgbaBilateralFrame,rgbaBilateralFrame,Imgproc.COLOR_BGR2GRAY);
+                //  Imgproc.cvtColor(rgbaBilateralFrame,rgbaBilateralFrame,Imgproc.COLOR_BGR2GRAY);
                 backgroundExtractionButton.setEnabled(true);
                 gestureExtractionButton.setEnabled(false);
-              //  findContourForBg1(rgbaBilateralFrame);
+                //  findContourForBg1(rgbaBilateralFrame);
                 getSavedImage(rgbaBilateralFrame,"gesturebutton.jpg");
                 Bitmap maskedBitmap = matToBitmapConversion(rgbaBilateralFrame);
                 String imagePredicted =classifyImage(maskedBitmap);
@@ -215,12 +216,16 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         Imgproc.bilateralFilter(rgbaFrame,rgbaBilateralFrame,smoothingFactor,sigmaColor,sigmaSpace);
         //cration of rectangle on the current frame:
         rgba= createRectangleOnFrame(rgbaBilateralFrame);
+        counter++;
         //Creation of background model:
         getBackgroundCaptured(rgbaFrame,isBackGroundCaptured);
-        if(isBackGroundCaptured) {
-            extractGesture(backgroundSubtractionFrame,isGestureButtonClicked);
-            // String classifiedResult =
-           // gestureTextView.setText(classifiedResult);
+
+        if(isGestureButtonClicked) {
+            extractGesture(backgroundSubtractionFrame);
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException ex) {
+            }
         }
 
         return rgba;
@@ -234,22 +239,12 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         return isBackGroundCaptured;
     }
 
-    private void extractGesture(Mat backgroundSubtractionFrame,boolean isGestureButtonClicked) {
-        Size kSize = new Size(3, 3);
-        Mat backGroundRemovedMat = new Mat();
+    private void extractGesture(Mat backgroundSubtractionFrame) {
         //remove the background from the filtered frame:
         rgbaBilateralFrame = clipImageOnROI(rgbaBilateralFrame);
         if(!rgbaBilateralFrame.empty()) {
-            backGroundRemovedMat = removeBackgroundFromFrame(backgroundSubtractionFrame, rgbaBilateralFrame);
-          //  getSavedImage(backGroundRemovedMat,"remove.jpg");
-           /* if(isGestureButtonClicked) {
-                Bitmap maskedBitmap = matToBitmapConversion(backGroundRemovedMat);
-                String classifiedResult = classifyImage(maskedBitmap);
-              //  return classifiedResult;
-            }*/
-           // isGestureButtonClicked = false;
+            removeBackgroundFromFrame(backgroundSubtractionFrame, rgbaBilateralFrame);
         }
-     // return "";
     }
 
     private void getSavedImage(Mat clippedMat,String name){
@@ -454,9 +449,11 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             count++;
             if (recognition.getConfidence() > bestRecognition.getConfidence())
                 bestRecognition = recognition;
-
+            String recognitionClassID =  bestRecognition.getId();
+            Log.i("Best Recognition:" , recognitionClassID);
+            gestureTextView.setText(recognitionClassID);
         }
-       // layoutResult(UtilsClassify.getResizedBitmap(bitmap, 1400, 900, true));
+        // layoutResult(UtilsClassify.getResizedBitmap(bitmap, 1400, 900, true));
         Mat textMap = bitmapToMatConversion(resizedBitmap);
 
         Log.i("Prediction : ****", String.valueOf(bestRecognition.getConfidence()));
@@ -464,7 +461,7 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         putText(textMap,bestRecognition.getTitle());
         Log.i("Count : ",String.valueOf (count));
         Log.i("Name : " , bestRecognition.getTitle());
-       // String classifiedResult = processResult(bestRecognition);
+        // String classifiedResult = processResult(bestRecognition);
         //String gestureDetected = "Gesture detected: "+" " + bestRecognition.getTitle() + classifiedResult;
         return bestRecognition.getTitle();
     }
